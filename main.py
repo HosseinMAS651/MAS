@@ -19,6 +19,8 @@ BASE = Path(__file__).resolve().parent
 UPLOADS = BASE / "uploads"
 UPLOADS.mkdir(exist_ok=True)
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE / 'mas.db'}")
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 SECRET_KEY = os.getenv("MAS_SECRET_KEY")
 if not SECRET_KEY or len(SECRET_KEY) < 32:
     # Development fallback only. Production README requires a real secret in the environment.
