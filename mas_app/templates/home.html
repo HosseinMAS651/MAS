@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <div><h1>خانه</h1><p class="muted">سلام {{ user.account_name or user.username }} 👋</p></div>
+  <a class="primary" href="/rooms/new">＋ افزودن اتاق</a>
+</div>
+<div class="grid stats">
+  <div class="card"><div class="stat">{{ rooms|length }}</div><div>اتاق ساخته‌شده</div></div>
+  <div class="card"><div class="stat">{{ total_capacity }}</div><div>ظرفیت کل</div></div>
+  <div class="card"><div class="stat">{{ recordings_count }}</div><div>ضبط ذخیره‌شده</div></div>
+</div>
+<section class="section">
+  <div class="head"><h2>اتاق‌های شما</h2><a href="/rooms">مشاهده همه</a></div>
+  <div class="grid">
+    {% for room in rooms %}
+      <article class="card room-card">
+        <a class="room-main" href="/rooms/{{ room.id }}">
+          <h3>{{ room.name }}</h3>
+          <p class="muted">ظرفیت: {{ room.capacity }} سخنران</p>
+          <div class="tags">
+            <span>{{ 'ضبط روشن' if room.recording_enabled else 'ضبط خاموش' }}</span>
+            <span>{{ 'فایل زنده' if room.live_files_enabled else 'فایل مخفی' }}</span>
+          </div>
+        </a>
+        <div class="room-actions">
+          <a href="/rooms/{{ room.id }}/play">▶ پخش</a>
+          <a href="/rooms/{{ room.id }}/edit">ویرایش ظرفیت</a>
+        </div>
+      </article>
+    {% else %}
+      <div class="card empty">هنوز اتاقی ساخته نشده است.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

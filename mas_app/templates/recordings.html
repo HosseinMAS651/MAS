@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head"><div><h1>فایل‌های ضبط‌شده</h1><p class="muted">آرشیو ضبط‌های اتاق‌های شما</p></div></div>
+<div class="card table-wrap">
+<table><thead><tr><th>اتاق</th><th>فایل</th><th>حجم</th><th>زمان</th><th>عملیات</th></tr></thead><tbody>
+{% for f in recordings %}
+<tr>
+  <td>{{ f.room_name }}</td><td><a target="_blank" rel="noopener" href="/files/{{ f.id }}">{{ f.filename }}</a></td>
+  <td>{{ f.size_label }}</td><td>{{ f.created_label }}</td>
+  <td><div class="row"><a class="secondary" target="_blank" rel="noopener" href="/files/{{ f.id }}">مشاهده</a><a class="secondary" href="/files/{{ f.id }}/download">دانلود</a><button class="secondary delete-file" data-file-id="{{ f.id }}">حذف</button></div></td>
+</tr>
+{% else %}<tr><td colspan="5" class="empty">هنوز ضبطی ثبت نشده است.</td></tr>{% endfor %}
+</tbody></table>
+</div>
+<script type="application/json" id="recordings-data">{{ {'csrf': csrf}|tojson }}</script>
+<script src="/static/files.js" defer></script>
+{% endblock %}

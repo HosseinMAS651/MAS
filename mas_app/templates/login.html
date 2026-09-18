@@ -1,0 +1,13 @@
+{% extends "auth.html" %}
+{% block auth_content %}
+<form method="post" action="/login" class="stack">
+  <label>نام کاربری
+    <input name="username" autocomplete="username" maxlength="32" required autofocus>
+  </label>
+  <label>رمز عبور
+    <input name="password" type="password" autocomplete="current-password" maxlength="128" required>
+  </label>
+  <button class="primary wide" type="submit">ورود</button>
+</form>
+<p class="auth-link"><a href="/register">ایجاد حساب کاربری</a></p>
+{% endblock %}

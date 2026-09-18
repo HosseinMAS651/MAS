@@ -1,0 +1,16 @@
+{% extends "auth.html" %}
+{% block auth_content %}
+<form method="post" action="/register" class="stack">
+  <label>نام کاربری انگلیسی
+    <input name="username" pattern="[A-Za-z0-9_]+" minlength="3" maxlength="32" autocomplete="username" required placeholder="hossein_20">
+  </label>
+  <label>رمز عبور
+    <input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+  </label>
+  <label>تکرار رمز عبور
+    <input name="password2" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+  </label>
+  <button class="primary wide" type="submit">ایجاد حساب</button>
+</form>
+<p class="auth-link"><a href="/login">بازگشت به ورود</a></p>
+{% endblock %}

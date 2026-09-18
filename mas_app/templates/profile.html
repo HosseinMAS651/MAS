@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head"><div><h1>{{ 'تکمیل پروفایل' if first else 'پروفایل کاربری' }}</h1><p class="muted">اطلاعات پایه برای مدیریت اتاق‌ها</p></div></div>
+<form method="post" action="/profile" class="card stack">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="two">
+    <label>نام حساب
+      <input name="account_name" maxlength="120" value="{{ user.account_name }}" required>
+    </label>
+    <label>سن
+      <input name="age" type="number" min="1" max="120" value="{{ user.age or '' }}" required>
+    </label>
+  </div>
+  <label>شغل
+    <input name="job" maxlength="120" value="{{ user.job }}" required>
+  </label>
+  <label>نام کاربری
+    <input value="{{ user.username }}" disabled>
+  </label>
+  <button class="primary" type="submit">ذخیره اطلاعات</button>
+</form>
+{% endblock %}

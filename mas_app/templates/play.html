@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <div><h1>پخش اتاق: {{ room.name }}</h1><p class="muted" id="connection-status">در حال همگام‌سازی…</p></div>
+  <a class="secondary" href="/rooms/{{ room.id }}">بازگشت به تنظیمات</a>
+</div>
+<div id="play-root" class="card">
+  <div id="empty-play" class="empty" hidden>سخنرانی ثبت‌شده‌ای وجود ندارد.</div>
+  <div id="play-content">
+    <div class="play-heading"><div><h2 id="speaker-name">—</h2><p class="muted" id="speaker-meta">—</p></div><div class="speaker-count" id="speaker-count">۰ / ۰</div></div>
+    <div class="timer" id="timer">00:00</div>
+    <div class="overtime" id="overtime"></div>
+    <div class="bar"><i id="progress-bar"></i></div>
+    <div class="row center controls">
+      <button class="primary" id="btn-start">▶ شروع</button>
+      <button class="secondary" id="btn-pause">⏸ توقف</button>
+      <button class="secondary" id="btn-reset">↻ بازنشانی</button>
+    </div>
+    <div class="row between controls">
+      <button class="secondary" id="btn-prev">← سخنران قبلی</button>
+      <button class="primary" id="btn-next">سخنران بعدی →</button>
+    </div>
+    <section id="description-section" class="section" hidden><h3>توضیحات سخنران</h3><div class="card-inner" id="speaker-description"></div></section>
+    <section id="speaker-files-section" class="section" hidden><h3>فایل‌های سخنران</h3><div class="file-list" id="speaker-files"></div></section>
+    <section class="section"><h3>فایل‌های همگانی</h3><div class="file-list" id="common-files"></div></section>
+    {% if room.recording_enabled %}
+    <section class="section recording-box">
+      <div class="head compact"><h3>ضبط اتاق</h3><a href="/recordings?room_id={{ room.id }}">آرشیو ضبط‌ها</a></div>
+      <div class="row"><button class="primary" id="record-btn">● شروع ضبط</button><span class="muted" id="record-status">آماده</span></div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+<script type="application/json" id="play-data">{{ page_data|tojson }}</script>
+<script src="/static/play.js" defer></script>
+{% endblock %}

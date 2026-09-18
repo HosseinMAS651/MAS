@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <div><h1>تنظیمات اتاق: {{ room.name }}</h1><p class="muted">ظرفیت {{ room.capacity }} سخنران</p></div>
+  <div class="row"><a class="secondary" href="/rooms/{{ room.id }}/play">▶ پخش اتاق</a><a class="primary" href="/rooms/{{ room.id }}/edit">ویرایش ظرفیت</a></div>
+</div>
+<form id="room-form" class="stack" action="/rooms/{{ room.id }}/save" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="manual_order" id="manual_order">
+  <section class="card">
+    <h2>تنظیمات عمومی</h2>
+    <label>نام اتاق
+      <input name="room_name" maxlength="160" value="{{ room.name }}" required>
+    </label>
+    <div class="switches">
+      <label><input type="checkbox" name="recording" {% if room.recording_enabled %}checked{% endif %}> ضبط اتاق فعال باشد</label>
+      <label><input type="checkbox" name="live_files" {% if room.live_files_enabled %}checked{% endif %}> فایل‌های اختصاصی سخنران در پخش نمایش داده شوند</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>زمان سخنرانی</h2>
+    <div class="switches">
+      <label><input type="radio" name="timing_mode" value="global" {% if room.timing_mode == 'global' %}checked{% endif %}> همگانی</label>
+      <label><input type="radio" name="timing_mode" value="individual" {% if room.timing_mode == 'individual' %}checked{% endif %}> برای هر سخنران</label>
+    </div>
+    <label>زمان همگانی (دقیقه)
+      <input name="global_min" type="number" min="1" max="1440" value="{{ room.global_seconds // 60 }}">
+    </label>
+  </section>
+
+  <section class="card">
+    <h2>فایل‌های همگانی</h2>
+    <input type="file" name="common_files" multiple accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.png,.jpg,.jpeg">
+    <div class="file-list">
+      {% for f in common_files %}
+        <div class="file-item"><a target="_blank" rel="noopener" href="/files/{{ f.id }}">📎 {{ f.filename }}</a><button type="button" class="secondary delete-file" data-file-id="{{ f.id }}">حذف</button></div>
+      {% else %}<span class="muted">فایلی ثبت نشده است.</span>{% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><div><h2>سخنرانان</h2><p class="muted">در حالت دستی کارت‌ها را جابه‌جا کنید؛ ترتیب ثبت‌شده با شناسهٔ سخنران نگه‌داری می‌شود.</p></div></div>
+    <div id="speaker-list">
+    {% for speaker in speakers %}
+      <article class="speaker card" draggable="true" data-id="{{ speaker.id }}">
+        <div class="head compact"><h3>سخنران <span class="speaker-number">{{ loop.index }}</span></h3><span class="grip" title="جابه‌جایی">☷</span></div>
+        <input type="hidden" name="sid" value="{{ speaker.id }}">
+        <div class="two">
+          <label>نام<input maxlength="120" name="name_{{ speaker.id }}" value="{{ speaker.name }}"></label>
+          <label>جنسیت<select name="gender_{{ speaker.id }}"><option value="">انتخاب</option><option value="مرد" {% if speaker.gender == 'مرد' %}selected{% endif %}>مرد</option><option value="زن" {% if speaker.gender == 'زن' %}selected{% endif %}>زن</option></select></label>
+        </div>
+        <div class="two">
+          <label>سن<input name="age_{{ speaker.id }}" type="number" min="1" max="120" value="{{ speaker.age or '' }}"></label>
+          <label>زمان اختصاصی (دقیقه)<input name="time_{{ speaker.id }}" type="number" min="1" max="1440" value="{{ speaker.speaking_seconds // 60 if speaker.speaking_seconds else 5 }}"></label>
+        </div>
+        <label>توضیحات<textarea name="desc_{{ speaker.id }}" rows="2" maxlength="1000">{{ speaker.description }}</textarea></label>
+        <div class="file-upload-box">
+          <b>آپلود برای این سخنران</b>
+          <input type="file" name="file_{{ speaker.id }}" multiple accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.png,.jpg,.jpeg">
+          <div class="file-list">
+            {% for f in speaker.files %}
+              <div class="file-item"><a target="_blank" rel="noopener" href="/files/{{ f.id }}">📄 {{ f.filename }}</a><button type="button" class="secondary delete-file" data-file-id="{{ f.id }}">حذف</button></div>
+            {% else %}<span class="muted">فایلی ثبت نشده است.</span>{% endfor %}
+          </div>
+        </div>
+      </article>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>ترتیب سخنرانی</h2>
+    <div class="switches">
+      {% for value,label in [('age','بر اساس سن'),('alpha','بر اساس حروف الفبا'),('random','تصادفی'),('manual','دستی')] %}
+        <label><input type="radio" name="order_mode" value="{{ value }}" {% if room.order_mode == value %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+    </div>
+  </section>
+  <div class="row"><button class="primary" type="submit">ذخیره همه تنظیمات</button><a class="secondary" href="/rooms/{{ room.id }}/play">انصراف / پخش</a></div>
+</form>
+<script type="application/json" id="room-data">{{ {'csrf': csrf}|tojson }}</script>
+<script src="/static/room_editor.js" defer></script>
+{% endblock %}

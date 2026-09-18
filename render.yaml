@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: mas
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn mas_app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
+    healthCheckPath: /health
+    envVars:
+      - key: MAS_ENV
+        value: production
+      - key: MAS_COOKIE_SECURE
+        value: "1"
+      - key: MAS_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: MAS_STORAGE_DIR
+        value: ./uploads
