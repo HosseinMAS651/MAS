@@ -112,6 +112,19 @@ class SpeechFile(Base):
     speaker: Mapped[Optional[Speaker]] = relationship(back_populates="files")
 
 
+class SpeakerTimerState(Base):
+    tablename = "speaker_timer_states"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), index=True)
+    speaker_id: Mapped[int] = mapped_column(
+        ForeignKey("speakers.id", ondelete="CASCADE"),
+        unique=True
+    )
+    elapsed_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    overtime_seconds: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class RoomState(Base):
     __tablename__ = "room_states"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -499,16 +512,35 @@ async def save_room(request: Request, room_id: int):
 
 
 # ------------------------------ Real playback state ------------------------------
+def get_speaker_timer(db: Session, room_id: int, speaker_id: int, fallback_elapsed: int = 0):
+    timer = db.scalar(
+        select(SpeakerTimerState).where(
+            SpeakerTimerState.room_id == room_id,
+            SpeakerTimerState.speaker_id == speaker_id,
+        )
+    )
+    if timer is None:
+        timer = SpeakerTimerState(
+            room_id=room_id,
+            speaker_id=speaker_id,
+            elapsed_seconds=fallback_elapsed,
+            overtime_seconds=0,
+        )
+        db.add(timer)
+        db.flush()
+    return timer
 def state_snapshot(db: Session, room: Room) -> dict:
     state = room.state
     speakers = db.scalars(select(Speaker).options(selectinload(Speaker.files)).where(Speaker.room_id == room.id, Speaker.name != "").order_by(Speaker.order_index, Speaker.id)).all()
     if state is None:
         state = RoomState(room_id=room.id, updated_at=int(time.time())); db.add(state); db.commit(); db.refresh(state)
-    current_elapsed = state.elapsed_seconds
-    overtime = state.overtime_seconds
+    current_speaker = speakers[state.current_index] if speakers and state.current_index < len(speakers) else None
+    timer = get_speaker_timer(db, room.id, current_speaker.id, state.elapsed_seconds) if current_speaker else None
+    current_elapsed = timer.elapsed_seconds if timer else state.elapsed_seconds
+    overtime = timer.overtime_seconds if timer else state.overtime_seconds
     if state.running and state.started_at:
         delta = max(0, int(time.time()) - state.started_at)
-        current_total = state.elapsed_seconds + delta
+        current_total = timer.elapsed_seconds + delta if timer else state.elapsed_seconds + delta
         current_elapsed = min(current_total, speakers[state.current_index].speaking_seconds) if speakers and state.current_index < len(speakers) else current_total
         overtime = max(0, current_total - (speakers[state.current_index].speaking_seconds if speakers and state.current_index < len(speakers) else 0))
     return {"running": state.running, "current_index": state.current_index, "elapsed_seconds": current_elapsed, "overtime_seconds": overtime, "total_speakers": len(speakers), "server_time": int(time.time())}
@@ -564,13 +596,43 @@ def _apply_control(request: Request, room_id: int, csrf: str, action: str):
         room=db.get(Room,r.id); speakers=db.scalars(select(Speaker).where(Speaker.room_id==r.id, Speaker.name!="").order_by(Speaker.order_index,Speaker.id)).all(); state=room.state
         if not state: state=RoomState(room_id=r.id,updated_at=int(time.time()),current_index=0);db.add(state);db.flush()
         current_sec=speakers[state.current_index].speaking_seconds if speakers and state.current_index < len(speakers) else room.global_seconds
-        if action in {"pause","next","prev","reset"}: persist_elapsed(state,current_sec)
+        current_speaker = speakers[state.current_index] if speakers and state.current_index < len(speakers) else None
+        timer = get_speaker_timer(db, r.id, current_speaker.id, state.elapsed_seconds) if current_speaker else None
+        if timer and state.running and state.started_at:
+            now = int(time.time())
+            delta = max(0, now - state.started_at)
+            timer.elapsed_seconds += delta
+            timer.overtime_seconds = max(0, timer.elapsed_seconds - current_sec)
+            state.elapsed_seconds = timer.elapsed_seconds
+            state.overtime_seconds = timer.overtime_seconds
+            state.started_at = now
         if action=="start" and speakers:
             state.running=True;state.started_at=int(time.time())
         elif action=="pause": state.running=False;state.started_at=None
-        elif action=="reset" and speakers: state.elapsed_seconds=0;state.overtime_seconds=0;state.running=False;state.started_at=None
-        elif action=="next" and state.current_index < max(0,len(speakers)-1): state.current_index += 1;state.elapsed_seconds=0;state.overtime_seconds=0;state.running=False;state.started_at=None
-        elif action=="prev" and state.current_index > 0: state.current_index -= 1;state.elapsed_seconds=0;state.overtime_seconds=0;state.running=False;state.started_at=None
+        elif action=="reset" and speakers:
+            if timer:
+                timer.elapsed_seconds = 0
+                timer.overtime_seconds = 0
+            state.elapsed_seconds = 0
+            state.overtime_seconds = 0
+            state.running = False
+            state.started_at = None
+        elif action=="next" and state.current_index < max(0,len(speakers)-1):
+            state.current_index += 1
+            new_speaker = speakers[state.current_index]
+            new_timer = get_speaker_timer(db, r.id, new_speaker.id, 0)
+            state.elapsed_seconds = new_timer.elapsed_seconds
+            state.overtime_seconds = new_timer.overtime_seconds
+            state.running = False
+            state.started_at = None
+        elif action=="prev" and state.current_index > 0:
+            state.current_index -= 1
+            new_speaker = speakers[state.current_index]
+            new_timer = get_speaker_timer(db, r.id, new_speaker.id, 0)
+            state.elapsed_seconds = new_timer.elapsed_seconds
+            state.overtime_seconds = new_timer.overtime_seconds
+            state.running = False
+            state.started_at = None
         state.updated_at=int(time.time());db.commit();return state_snapshot(db,room)
 
 
