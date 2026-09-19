@@ -1,36 +1,28 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="head">
-  <div><h1>پخش اتاق: {{ room.name }}</h1><p class="muted" id="connection-status">در حال همگام‌سازی…</p></div>
-  <a class="secondary" href="/rooms/{{ room.id }}">بازگشت به تنظیمات</a>
-</div>
-<div id="play-root" class="card">
-  <div id="empty-play" class="empty" hidden>سخنرانی ثبت‌شده‌ای وجود ندارد.</div>
-  <div id="play-content">
-    <div class="play-heading"><div><h2 id="speaker-name">—</h2><p class="muted" id="speaker-meta">—</p></div><div class="speaker-count" id="speaker-count">۰ / ۰</div></div>
-    <div class="timer" id="timer">00:00</div>
-    <div class="overtime" id="overtime"></div>
-    <div class="bar"><i id="progress-bar"></i></div>
-    <div class="row center controls">
-      <button class="primary" id="btn-start">▶ شروع</button>
-      <button class="secondary" id="btn-pause">⏸ توقف</button>
-      <button class="secondary" id="btn-reset">↻ بازنشانی</button>
+<div class="page-head"><div><span class="eyebrow">پخش زنده اتاق</span><h1>{{ room.name }}</h1><p class="muted" id="connection-status">در حال همگام‌سازی…</p></div><div class="row gap"><a class="secondary" href="/rooms/{{ room.id }}">تنظیمات</a><a class="secondary" href="/rooms">اتاق‌ها</a></div></div>
+<div id="play-root" class="play-layout">
+  <aside class="speaker-sidebar card">
+    <div class="side-title"><strong>سخنران‌ها</strong><span class="badge" id="speaker-total">{{ speakers|length }}</span></div>
+    <div id="speaker-list" class="play-speaker-list"></div>
+  </aside>
+  <section class="card play-main">
+    <div id="empty-play" class="empty" hidden><h2>سخنرانی ثبت‌شده‌ای وجود ندارد</h2><p class="muted">برای شروع، نام حداقل یک سخنران را در تنظیمات وارد کنید.</p><a class="primary" href="/rooms/{{ room.id }}/edit">ویرایش اتاق</a></div>
+    <div id="play-content">
+      <div class="play-heading"><div><span class="badge" id="speaker-status">آماده</span><h2 id="speaker-name">—</h2><p class="muted" id="speaker-meta">—</p></div><div class="speaker-count" id="speaker-count">۰ / ۰</div></div>
+      <div class="timer-wrap"><div class="timer" id="timer">00:00</div><div class="overtime" id="overtime"></div><div class="bar"><i id="progress-bar"></i></div></div>
+      <div class="row center controls primary-controls"><button class="primary" id="btn-start">▶ شروع</button><button class="secondary" id="btn-pause">⏸ توقف</button><button class="secondary" id="btn-reset">↻ بازنشانی</button></div>
+      <div class="row between controls"><button class="secondary" id="btn-prev">← قبلی</button><button class="primary" id="btn-next">بعدی →</button></div>
+      <div class="speaker-actions"><button class="secondary" id="btn-finish">■ اتمام سخنرانی</button><button class="danger" id="btn-delete-speaker">حذف سخنران</button></div>
+      <section id="description-section" class="info-panel" hidden><h3>توضیحات سخنران</h3><p id="speaker-description"></p></section>
+      <section id="speaker-files-section" class="info-panel" hidden><h3>فایل‌های سخنران</h3><div id="speaker-files" class="file-list"></div></section>
+      <section class="info-panel"><h3>فایل‌های مشترک</h3><div id="common-files" class="file-list"></div></section>
+      {% if room.recording_enabled %}<section class="recording-box info-panel"><div class="recording-top"><div><h3>ضبط صوت</h3><p class="muted">حداکثر {{ page_data.max_recording_seconds // 60 }} دقیقه. نرخ ضبط کنترل‌شده برای جلوگیری از عبور از سقف فایل.</p></div><button class="primary" id="record-btn">● شروع ضبط</button></div><p id="record-status" class="muted">آماده</p><a id="record-download" class="secondary" hidden download>ذخیره محلی فایل ضبط‌شده</a></section>{% endif %}
+      <section class="info-panel"><h3>ضبط‌های ذخیره‌شده اتاق</h3><div id="recordings-list" class="file-list"></div><a class="secondary" href="/recordings?room_id={{ room.id }}">مشاهده آرشیو کامل</a></section>
     </div>
-    <div class="row between controls">
-      <button class="secondary" id="btn-prev">← سخنران قبلی</button>
-      <button class="primary" id="btn-next">سخنران بعدی →</button>
-    </div>
-    <section id="description-section" class="section" hidden><h3>توضیحات سخنران</h3><div class="card-inner" id="speaker-description"></div></section>
-    <section id="speaker-files-section" class="section" hidden><h3>فایل‌های سخنران</h3><div class="file-list" id="speaker-files"></div></section>
-    <section class="section"><h3>فایل‌های همگانی</h3><div class="file-list" id="common-files"></div></section>
-    {% if room.recording_enabled %}
-    <section class="section recording-box">
-      <div class="head compact"><h3>ضبط اتاق</h3><a href="/recordings?room_id={{ room.id }}">آرشیو ضبط‌ها</a></div>
-      <div class="row"><button class="primary" id="record-btn">● شروع ضبط</button><span class="muted" id="record-status">آماده</span></div>
-    </section>
-    {% endif %}
-  </div>
+  </section>
 </div>
+<div id="overtime-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="overtime-title"><div class="modal-card"><span class="badge danger-badge">پایان زمان مجاز</span><h2 id="overtime-title">زمان سخنران تمام شد</h2><p class="muted">آیا سخنرانی ادامه پیدا کند؟</p><div class="modal-actions"><button class="primary" id="overtime-continue">ادامه سخنرانی</button><button class="secondary" id="overtime-finish">اتمام سخنرانی</button></div></div></div>
 <script type="application/json" id="play-data">{{ page_data|tojson }}</script>
 <script src="/static/play.js" defer></script>
 {% endblock %}

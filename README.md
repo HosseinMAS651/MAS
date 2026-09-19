@@ -1,80 +1,83 @@
-# ماس — مدیریت اتاق سخنرانی
+# MAS — مدیریت اتاق سخنرانی
 
-نسخهٔ بازنویسی‌شدهٔ پلتفرم «ماس» با FastAPI + SQLAlchemy + Jinja2 و Frontend جداشده از Backend است.
+این نسخه یک بازنویسی کامل از پروژه فعلی MAS است و برای استفاده روی FastAPI + SQLAlchemy + PostgreSQL/SQLite آماده شده است.
 
-## قابلیت‌ها
+## قابلیت‌های اصلی
 
-- ثبت‌نام، ورود، خروج و Session قابل ابطال با کوکی HttpOnly
-- CSRF برای عملیات تغییر‌دهنده
-- محدودسازی تلاش‌های ورود و ثبت‌نام بر پایهٔ IP/نام کاربری، بدون Account Lockout ساده
-- تکمیل و ویرایش پروفایل
-- خانه و مدیریت اتاق‌ها
-- ظرفیت ۱ تا ۱۰۰ سخنران
-- نام، جنسیت، سن، توضیحات و زمان سخنرانی
-- زمان همگانی یا اختصاصی
-- ترتیب سنی، الفبایی، تصادفی و دستی با Drag & Drop
-- آپلود فایل همگانی و اختصاصی با محدودیت حجم/تعداد/سهمیه
-- مشاهده و دانلود فایل
-- پاک‌سازی مطمئن فایل‌های حذف‌شده با صف Cleanup
-- ضبط صدا از میکروفون مرورگر و ثبت آن در آرشیو ضبط‌ها
-- Playback پایدار با DOM ثابت و همگام‌سازی امن با Backend
-- تایمر Backend-based، مستقل برای هر سخنران و مبتنی بر `current_speaker_id`
-- Start / Pause / Reset / Next / Previous و نمایش Overtime
-- صفحهٔ آرشیو فایل‌های ضبط‌شده
-- Security Headers و CSP بدون inline JavaScript اجرایی
-- SQLite برای شروع و PostgreSQL برای چندکاربره/Production
-- مهاجرت خودکار حداقلی برای schema نسخهٔ قدیمی پروژه
-- تست‌های Unit/Integration و بررسی syntax جاوااسکریپت
+- حساب کاربری، ورود، ثبت‌نام و تکمیل پروفایل
+- تغییر رمز عبور با دریافت رمز فعلی و باطل‌کردن تمام نشست‌های قبلی
+- مدیریت اتاق و سخنران‌ها
+- ترتیب دستی، سنی، الفبایی و تصادفی
+- تایمر سرور-محور با نمایش روان در مرورگر
+- زمان اضافه (Overtime) با ثبت زمان واقعی اضافه
+- اعلان داخل سایت در پایان زمان مجاز
+- در صورت پایان زمان: ادامه سخنرانی یا اتمام و فریز سخنران
+- فریزشدن سخنران بدون حذف و امکان بازگشت به آن با «قبلی»
+- اتمام دستی سخنرانی در صفحه پخش
+- حذف سخنران در حالت پخش؛ با کاهش ظرفیت اتاق و انتخاب خودکار سخنران بعدی فعال
+- حذف فایل، کنترل سهمیه و صف پاک‌سازی
+- ضبط صوت مرورگر با کنترل مدت و حجم
+- ذخیره محلی ضبط در صورت شکست Upload
+- کنترل CSRF، Session امن، Rate Limit و Security Headers
+- XSS-safe rendering و کنترل دسترسی مالک اتاق
+- migration و repair برای چند شکل از دیتابیس‌های قدیمی
+- نگهداری اطلاعات timer به میلی‌ثانیه برای جلوگیری از پرش بصری
 
 ## اجرای محلی
 
-Python 3.11 یا 3.12 پیشنهاد می‌شود:
-
 ```bash
 python -m venv .venv
-# Windows
 .venv\\Scripts\\activate
-# Linux/macOS
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-```
-
-سپس یک Secret حداقل ۳۲ کاراکتری قرار دهید و اجرا کنید:
-
-```bash
+pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-و به:
-
-`http://127.0.0.1:8000/login`
-
-بروید.
-
-## Production
-
-برای استفادهٔ واقعی، PostgreSQL پیشنهاد می‌شود. فایل‌ها نیز باید روی storage پایدار یا Object Storage قرار بگیرند. مقدار `MAS_STORAGE_DIR` برای storage محلی قابل تنظیم است؛ پیش‌فرض `./uploads` است تا با نسخهٔ قبلی سازگار بماند.
-
-اگر روی Render از filesystem موقتی استفاده می‌کنید، فایل‌های Local با restart/redeploy قابل اتکا نیستند؛ برای دوام فایل‌ها باید Persistent Disk یا Object Storage تنظیم شود. این محدودیت پلتفرم است و با کدنویسی صرف حل نمی‌شود.
+در ویندوز اگر چند نسخه Python نصب است، Python 3.12 را استفاده کن.
 
 ## تست
 
-این نسخه در زمان تحویل ۲۰ تست Unit/Integration دارد که مسیرهای احراز هویت، اتاق، ۱۰۰ سخنران، فایل، ضبط، تایمر، XSS، CSRF، مهاجرت و همزمانی را پوشش می‌دهند.
-
 ```bash
-pytest -q
+pip install -r requirements-dev.txt
+PYTHONPATH=. pytest -q
 ```
 
-برای بررسی syntax فایل‌های JS:
+نسخه‌ای که تحویل داده شده با مجموعه تست داخلی اجرا شده و ۲۰ تست سبز دارد. تست PostgreSQL واقعی به دلیل در دسترس نبودن سرور PostgreSQL در محیط ساخت اجرا نشده است؛ برای PostgreSQL، SQL مخصوص این موتور و مسیر migration با تست دیالکت و migration محلی بررسی شده‌اند.
 
-```bash
-node --check mas_app/static/play.js
-node --check mas_app/static/room_editor.js
-node --check mas_app/static/files.js
+## استقرار روی Render
+
+نمونه `render.yaml` داخل پروژه موجود است و Start Command به صورت زیر تنظیم شده است:
+
+```text
+uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
 ```
 
-برای راهنمای جایگزینی فایل‌ها و استقرار، `REPLACE_GITHUB.md` و برای فهرست تغییرات، `CHANGELOG.md` را ببینید.
+Environment Variableهای اصلی:
 
-## سازگاری با استقرار قبلی
+- `MAS_ENV=production`
+- `MAS_SECRET_KEY=<حداقل 32 کاراکتر>`
+- `MAS_COOKIE_SECURE=1`
+- `DATABASE_URL=<آدرس PostgreSQL فعلی>`
+- `MAS_STORAGE_DIR=<مسیر Storage در صورت استفاده از دیسک پایدار>`
 
-در ریشهٔ پروژه یک `main.py` سازگارکننده وجود دارد؛ بنابراین دستور قدیمی `uvicorn main:app` نیز معتبر است. مسیر پیش‌فرض فایل‌ها `./uploads` و مسیر پیش‌فرض SQLite، `./mas.db` است تا داده‌های محلی نسخهٔ قبلی راحت‌تر حفظ شوند. قبل از هر Migration/Deployment از Database و فایل‌ها نسخهٔ پشتیبان بگیرید.
+**قبل از Deploy از دیتابیس فعلی Backup بگیر.** برنامه در Startup migration/repair انجام می‌دهد و برای حفظ داده‌های قبلی طراحی شده است، اما هیچ migration خودکاری را نباید بدون Backup روی دیتابیس مهم اجرا کرد.
+
+برای فایل‌ها نیز در Render از Storage پایدار یا Object Storage استفاده کن. فایل‌های محلی یک container معمولی Render برای دوام طولانی‌مدت مناسب نیستند.
+
+## نکته درباره داده‌های قدیمی
+
+نسخه جدید ستون `started_at_ms` را برای تایمر استفاده می‌کند. اگر دیتابیس قدیمی ستون `started_at` را به صورت TIMESTAMP ساخته باشد، نسخه جدید آن مقدار قدیمی را می‌خواند ولی دیگر آن ستون legacy را هنگام اجرای تایمر overwrite نمی‌کند.
+
+در Startup مواردی مانند order سخنران‌ها، stateهای تکراری تایمر/اتاق و بعضی رکوردهای تکراری Storage repair می‌شوند و سپس Unique Indexهای لازم ساخته می‌شوند.
+
+## ساختار
+
+- `main.py` — entry point
+- `mas_app/main.py` — routeها و application lifecycle
+- `mas_app/models.py` — مدل‌های دیتابیس
+- `mas_app/db.py` — Engine و migration/repair
+- `mas_app/services.py` — منطق تایمر، اتاق، فایل و Storage quota
+- `mas_app/auth.py` — Session، CSRF، password hashing و rate limit
+- `mas_app/storage.py` — Upload/Storage/Reconciliation
+- `mas_app/templates/` — رابط HTML
+- `mas_app/static/` — JavaScript/CSS
+- `tests/` — تست‌های regression و integration

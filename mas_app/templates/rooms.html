@@ -1,23 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="head"><div><h1>اتاق‌های سخنرانی</h1><p class="muted">اتاق‌های متعلق به حساب شما</p></div><a class="primary" href="/rooms/new">＋ ایجاد اتاق</a></div>
-<div class="grid">
+<div class="page-head"><div><h1>اتاق‌های سخنرانی</h1><p class="muted">مدیریت، ویرایش و اجرای اتاق‌ها</p></div><a class="primary" href="/rooms/new">＋ افزودن اتاق</a></div>
+{% if rooms %}
+<div class="room-grid">
 {% for room in rooms %}
-  <article class="card room-card">
-    <a class="room-main" href="/rooms/{{ room.id }}">
-      <h3>{{ room.name }}</h3>
-      <p class="muted">{{ room.capacity }} جای سخنران</p>
-    </a>
-    <div class="room-actions">
-      <a href="/rooms/{{ room.id }}/play">▶ پخش</a>
-      <a href="/rooms/{{ room.id }}/edit">ویرایش</a>
-      <form method="post" action="/rooms/{{ room.id }}/delete" onsubmit="return confirm('این اتاق و فایل‌های وابسته حذف شوند؟')">
-        <input type="hidden" name="csrf" value="{{ csrf }}"><button class="link-danger" type="submit">حذف</button>
-      </form>
-    </div>
+  <article class="room-card card">
+    <div class="room-card-top"><span class="badge">{{ room.capacity }} نفر</span><span class="muted">اتاق #{{ room.id }}</span></div>
+    <h2>{{ room.name }}</h2>
+    <p class="muted">{{ 'زمان اختصاصی' if room.timing_mode == 'individual' else 'زمان همگانی' }} · {{ 'ضبط روشن' if room.recording_enabled else 'ضبط خاموش' }}</p>
+    <div class="row gap"><a class="primary" href="/rooms/{{ room.id }}/play">▶ پخش</a><a class="secondary" href="/rooms/{{ room.id }}">تنظیم</a><a class="secondary" href="/rooms/{{ room.id }}/edit">ویرایش</a></div>
   </article>
-{% else %}
-  <div class="card empty">اتاقی وجود ندارد.</div>
 {% endfor %}
 </div>
+{% else %}<div class="empty card"><p>اتاقی وجود ندارد.</p><a class="primary" href="/rooms/new">ساخت اتاق</a></div>{% endif %}
 {% endblock %}

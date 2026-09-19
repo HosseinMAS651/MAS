@@ -1,53 +1,47 @@
-# جایگزینی نسخه قبلی پروژه MAS
+# راهنمای جایگزینی نسخه جدید MAS در GitHub و Render
 
-## قبل از جایگزینی
+این نسخه برای جایگزینی کل فایل‌های پروژه فعلی آماده شده است.
 
-از `mas.db` و کل پوشه `uploads/` نسخهٔ پشتیبان بگیرید. اگر Database شما PostgreSQL است، از آن backup واقعی بگیرید.
+## 1) قبل از جایگزینی
 
-## جایگزینی در GitHub
+اول از دیتابیس فعلی Backup بگیر.
 
-محتویات این ZIP را در ریشهٔ Repository قرار دهید و فایل‌های نسخهٔ قبلی را با فایل‌های جدید جایگزین کنید.
+اگر روی Render از PostgreSQL استفاده می‌کنی، مقدار فعلی `DATABASE_URL` را تغییر نده.
 
-دو فایل مهم را حذف نکنید:
+اگر برای فایل‌ها از Persistent Disk/Object Storage استفاده می‌کنی، مسیر و تنظیمات همان قبلی را حفظ کن.
 
-- `main.py` در ریشه برای سازگاری با `uvicorn main:app`
-- `uploads/.gitkeep` برای نگه‌داشتن پوشهٔ محلی Upload
+## 2) فایل‌های GitHub
 
-فایل `.env` را وارد GitHub نکنید. فقط `.env.example` باید در Repository باشد.
+محتویات ZIP را باز کن و فایل‌ها/پوشه‌های داخل آن را در همان Repository جایگزین کن.
 
-## اجرای محلی
+فایل‌های زیر جزء پروژه‌اند و باید منتقل شوند:
 
-```bash
-pip install -r requirements-dev.txt
-uvicorn main:app --reload
-```
+- `main.py`
+- `mas_app/`
+- `tests/`
+- `requirements.txt`
+- `requirements-dev.txt`
+- `render.yaml`
+- `.env.example`
+- `.gitignore`
+- مستندات موجود در ریشه پروژه
 
-سپس:
+پوشه `uploads/` فقط `.gitkeep` دارد. فایل‌های واقعی Upload شده را داخل GitHub قرار نده.
+
+همچنین فایل‌های `*.db`، `.env`، `__pycache__` و `.pytest_cache` نباید Commit شوند.
+
+## 3) Render
+
+Build Command:
 
 ```text
-http://127.0.0.1:8000/login
+pip install -r requirements.txt
 ```
-
-## مهاجرت دیتابیس قدیمی
-
-در اولین startup، برنامه schema قدیمی را تشخیص می‌دهد و ستون‌های جدید لازم را به‌صورت idempotent اضافه می‌کند. داده‌های معمول کاربران، اتاق‌ها، سخنران‌ها و فایل‌ها حفظ می‌شوند.
-
-قبل از اولین اجرا روی دیتابیس واقعی حتماً backup داشته باشید.
-
-## Render
-
-برای Render این مقادیر را تنظیم کنید:
-
-- `MAS_ENV=production`
-- `MAS_SECRET_KEY` حداقل ۳۲ کاراکتر و تصادفی
-- `MAS_COOKIE_SECURE=1`
-- `DATABASE_URL` ترجیحاً PostgreSQL
-- `MAS_STORAGE_DIR` در صورت استفاده از storage محلی
 
 Start Command:
 
 ```text
-uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers
+uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
 ```
 
 Health Check:
@@ -56,6 +50,52 @@ Health Check:
 /health
 ```
 
-### نکتهٔ بسیار مهم Render
+Python پیشنهادی این نسخه:
 
-فایل‌های محلی و SQLite روی filesystem موقتی Render برای نگهداری دائمی مناسب نیستند. برای Database، PostgreSQL استفاده کنید؛ برای فایل‌های Upload و Recording، storage پایدار یا Object Storage لازم است. این موضوع محدودیت محیط Deploy است و صرفاً با اصلاح Python برطرف نمی‌شود.
+```text
+3.12.10
+```
+
+## 4) Environment Variables
+
+حتماً این موارد را بررسی کن:
+
+```text
+MAS_ENV=production
+MAS_COOKIE_SECURE=1
+MAS_SECRET_KEY=<کلید فعلی امن>
+DATABASE_URL=<همان PostgreSQL قبلی>
+```
+
+کلید `MAS_SECRET_KEY` را بی‌دلیل عوض نکن، چون عوض‌کردن آن باعث نامعتبرشدن Sessionهای قدیمی می‌شود.
+
+## 5) بعد از Deploy
+
+ابتدا:
+
+```text
+/health
+```
+
+را باز کن.
+
+بعد Login با یک حساب قدیمی را تست کن.
+
+سپس این مسیرها را بررسی کن:
+
+1. ورود و خروج
+2. پروفایل و تغییر رمز
+3. اتاق و ویرایش سخنران
+4. شروع/توقف/بازنشانی تایمر
+5. قبلی/بعدی
+6. اتمام سخنرانی و فریز
+7. ادامه در زمان اضافه
+8. حذف سخنران در زمان پخش
+9. ضبط صوت و آرشیو ضبط‌ها
+10. فایل‌های اتاق
+
+## نکته مهم درباره دیتابیس
+
+برنامه هنگام Startup migration/repair را اجرا می‌کند. این migration برای حفظ داده‌های قبلی طراحی شده ولی باید قبل از Deploy روی دیتابیس اصلی Backup داشته باشی.
+
+تست PostgreSQL واقعی روی سرور Production این محیط انجام نشده است. منطق مخصوص PostgreSQL و migrationهای مهم با تست کد و compile دیالکت بررسی شده‌اند.

@@ -1,13 +1,18 @@
-{% extends "auth.html" %}
-{% block auth_content %}
-<form method="post" action="/login" class="stack">
-  <label>نام کاربری
-    <input name="username" autocomplete="username" maxlength="32" required autofocus>
-  </label>
-  <label>رمز عبور
-    <input name="password" type="password" autocomplete="current-password" maxlength="128" required>
-  </label>
-  <button class="primary wide" type="submit">ورود</button>
-</form>
-<p class="auth-link"><a href="/register">ایجاد حساب کاربری</a></p>
-{% endblock %}
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>{{ title }}</title><link rel="stylesheet" href="/static/app.css"></head>
+<body class="auth-bg">
+<main class="auth-card">
+  <div class="brand-mark">مــاس</div>
+  <h1>{{ title }}</h1><p class="muted">{{ subtitle }}</p>
+  {% if error %}<div class="flash danger">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="form-stack">
+    <input type="hidden" name="guest_csrf" value="{{ guest_csrf }}">
+    <label>نام کاربری<input name="username" autocomplete="username" required maxlength="32" dir="ltr"></label>
+    <label>رمز عبور<input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="128" dir="ltr"></label>
+    <button class="primary wide" type="submit">ورود</button>
+  </form>
+  <p class="auth-switch">حساب ندارید؟ <a href="/register">ایجاد حساب</a></p>
+</main>
+</body>
+</html>

@@ -8,7 +8,7 @@
       try {
         const fd = new FormData();
         fd.append("csrf", data.csrf || "");
-        const response = await fetch(`/files/${button.dataset.fileId}/delete`, {method: "POST", body: fd, credentials: "same-origin"});
+        const response = await fetch(`/files/${button.dataset.fileId}/delete`, {method:"POST", body:fd, credentials:"same-origin", headers:{"Accept":"application/json"}});
         if (!response.ok) throw new Error("delete failed");
         location.reload();
       } catch (_) {

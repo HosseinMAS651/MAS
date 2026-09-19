@@ -1,12 +1,13 @@
 services:
   - type: web
     name: mas
-    runtime: python
-    plan: free
+    env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn mas_app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
       - key: MAS_ENV
         value: production
       - key: MAS_COOKIE_SECURE
@@ -15,5 +16,3 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false
-      - key: MAS_STORAGE_DIR
-        value: ./uploads

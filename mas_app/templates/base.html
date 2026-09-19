@@ -2,26 +2,27 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
   <title>{{ title }}</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <header class="site-header">
   <div class="topbar container">
-    <a class="logo" href="/">مــاس <small>مدیریت اتاق سخنرانی</small></a>
+    <a class="logo" href="/"><span>مــاس</span><small>مدیریت اتاق سخنرانی</small></a>
     <a class="primary" href="/rooms/new">＋ افزودن اتاق</a>
   </div>
   <nav class="nav container" aria-label="ناوبری اصلی">
     <a class="{{ 'active' if active == 'home' else '' }}" href="/">خانه</a>
-    <a class="{{ 'active' if active == 'profile' else '' }}" href="/profile">پروفایل کاربری</a>
-    <a class="{{ 'active' if active in ['rooms','room','play'] else '' }}" href="/rooms">اتاق‌های سخنرانی</a>
-    <a class="{{ 'active' if active == 'recordings' else '' }}" href="/recordings">فایل‌های ضبط‌شده</a>
+    <a class="{{ 'active' if active in ['rooms','room','play'] else '' }}" href="/rooms">اتاق‌ها</a>
+    <a class="{{ 'active' if active == 'recordings' else '' }}" href="/recordings">ضبط‌ها</a>
+    <a class="{{ 'active' if active == 'profile' else '' }}" href="/profile">پروفایل</a>
   </nav>
 </header>
 <main class="container main">
-  {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+  {% if flash %}<div class="flash success">{{ flash }}</div>{% endif %}
+  {% if error %}<div class="flash danger">{{ error }}</div>{% endif %}
   {% block content %}{% endblock %}
   <div class="footer-actions">
     <form method="post" action="/logout">

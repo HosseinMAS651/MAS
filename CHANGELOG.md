@@ -1,47 +1,24 @@
-# Changelog — MAS 2.0
+# Changelog — MAS Rewrite
 
-## 2.0.0
+## Rewrite
 
-این نسخه به‌جای وصله‌کردن باگ‌های نسخه قبلی، ساختار برنامه را به بخش‌های مستقل‌تر تقسیم کرده و نقاط حساس را بازطراحی کرده است.
-
-### Backend / Auth
-- Sessionها با توکن تصادفی و HMAC در دیتابیس نگهداری می‌شوند.
-- CSRF برای عملیات تغییر‌دهنده فعال است.
-- محدودیت ورود و ثبت‌نام بر پایهٔ IP/ترکیب IP و نام کاربری است و قفل سادهٔ حساب حذف شده است.
-- برای نام کاربری ناموجود از hash ساختگی با هزینهٔ مشابه استفاده می‌شود.
-- ورودی‌های نام کاربری و رمز عبور در Backend نیز اعتبارسنجی می‌شوند.
-- Headerهای امنیتی و CSP اضافه شده‌اند.
-
-### Timer / State
-- وضعیت فعال سخنران با `current_speaker_id` نگهداری می‌شود، نه فقط index.
-- برای هر سخنران Timer مستقل وجود دارد.
-- Room / RoomState / SpeakerTimerState از optimistic locking استفاده می‌کنند.
-- GET وضعیت فقط خواندنی است.
-- Polling فرانت‌اند به‌صورت serialized انجام می‌شود.
-- تغییر ترتیب سخنران، نام‌گذاری و حذف جایگاه، تایمر فرد دیگر را تصاحب نمی‌کند.
-
-### Files
-- نام ذخیرهٔ فایل از ابتدا قطعی ثبت می‌شود و دیگر با glob یا پسوند به فایل دیگری نگاشت نمی‌شود.
-- Upload به صورت temporary + atomic replace انجام می‌شود.
-- سقف حجم هر فایل، مجموع درخواست، تعداد فایل و سهمیهٔ اتاق کنترل می‌شود.
-- فایل‌های orphan ناشی از transaction failure پاک می‌شوند.
-- حذف فایل با Cleanup Queue انجام می‌شود.
-- مسیر فایل‌ها در برابر Path Traversal محافظت شده است.
-- ضبط OGG/WebM پسوند و MIME مناسب خود را حفظ می‌کند.
-
-### Frontend
-- JS و CSS از Backend HTML جدا شده‌اند.
-- Static route به‌صورت رسمی Mount شده است.
-- Playback هر ثانیه کل DOM را بازسازی نمی‌کند.
-- وضعیت سخنران از Snapshot سرور می‌تواند اطلاعات صفحهٔ قدیمی را اصلاح کند.
-- Recording با خطای MediaRecorder دوبار ذخیره نمی‌شود.
-- فایل‌های اختصاصی فقط وقتی گزینهٔ نمایش زنده فعال باشد نشان داده می‌شوند.
-
-### Database / Deploy
-- SQLite با Foreign Keys + WAL + busy timeout تنظیم می‌شود.
-- PostgreSQL از طریق psycopg پشتیبانی می‌شود.
-- مهاجرت idempotent برای schema نسخهٔ قدیمی انجام می‌شود.
-- شمارندهٔ فضای اتاق با update اتمیک نگهداری می‌شود.
-- برای مقادیر حجم فایل از BigInteger استفاده شده است.
-- Root `main.py` برای سازگاری با `uvicorn main:app` باقی مانده است.
-- `render.yaml` و health check اضافه شده‌اند.
+- بازنویسی ساختار Backend، Storage، Auth، Timer و Frontend
+- تایمر میلی‌ثانیه‌ای با interpolation سمت مرورگر برای کاهش پرش و ناهماهنگی بصری
+- Timer state مستقل برای هر سخنران
+- Overtime واقعی و ثبت‌شده در سمت سرور
+- اعلان پایان زمان + انتخاب ادامه یا اتمام
+- فریزشدن سخنران تمام‌شده بدون حذف
+- امکان بازگشت به سخنران فریز‌شده با Previous یا انتخاب مستقیم از فهرست
+- دکمه اتمام دستی
+- حذف سخنران در حین پخش + کاهش ظرفیت + انتخاب خودکار سخنران بعدی فعال
+- تغییر رمز عبور + باطل‌شدن همه Sessionهای قبلی
+- Login/Register CSRF
+- Session امن با توکن تصادفی و نگهداری Hash در DB
+- Rate Limit پایدار در DB
+- اصلاح XSS/Content-Disposition/Path Traversal/CSRF
+- محدودسازی نوع فایل ضبط
+- fallback ذخیره محلی ضبط در صورت شکست Upload
+- reconciliation برای فایل‌های orphan
+- PostgreSQL-compatible storage quota update
+- migration/repair برای داده‌های قدیمی و ایجاد indexهای یکتا
+- test suite با ۲۰ تست regression/integration
