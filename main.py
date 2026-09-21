@@ -1,4 +1,3 @@
-"""Compatibility entry point for existing MAS deployments."""
+"""Compatibility entry point for MAS deployments."""
 from mas_app.main import app
-
 __all__ = ["app"]

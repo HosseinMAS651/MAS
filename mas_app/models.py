@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -57,23 +57,17 @@ class Room(Base):
     storage_used_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     created_at: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    public_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True, nullable=True)
     __mapper_args__ = {"version_id_col": version}
     owner: Mapped[User] = relationship(back_populates="rooms")
-    speakers: Mapped[list["Speaker"]] = relationship(
-        back_populates="room", cascade="all, delete-orphan", order_by="Speaker.order_index"
-    )
+    speakers: Mapped[list["Speaker"]] = relationship(back_populates="room", cascade="all, delete-orphan", order_by="Speaker.order_index")
     files: Mapped[list["SpeechFile"]] = relationship(back_populates="room", cascade="all, delete-orphan")
-    state: Mapped[Optional["RoomState"]] = relationship(
-        back_populates="room", uselist=False, cascade="all, delete-orphan"
-    )
+    state: Mapped[Optional["RoomState"]] = relationship(back_populates="room", uselist=False, cascade="all, delete-orphan")
 
 
 class Speaker(Base):
     __tablename__ = "speakers"
-    __table_args__ = (
-        UniqueConstraint("room_id", "order_index", name="uq_speaker_room_order"),
-        Index("ix_speakers_room_order", "room_id", "order_index"),
-    )
+    __table_args__ = (UniqueConstraint("room_id", "order_index", name="uq_speaker_room_order"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
@@ -82,10 +76,8 @@ class Speaker(Base):
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     speaking_seconds: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    is_finished: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    finished_at_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     room: Mapped[Room] = relationship(back_populates="speakers")
-    files: Mapped[list["SpeechFile"]] = relationship(back_populates="speaker", cascade="all, delete-orphan")
+    files: Mapped[list["SpeechFile"]] = relationship(back_populates="speaker")
 
 
 class SpeechFile(Base):
@@ -100,6 +92,8 @@ class SpeechFile(Base):
     upload_type: Mapped[str] = mapped_column(String(20), nullable=False)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    speaker_name_snapshot: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    room_name_snapshot: Mapped[str] = mapped_column(String(160), default="", nullable=False)
     room: Mapped[Room] = relationship(back_populates="files")
     speaker: Mapped[Optional[Speaker]] = relationship(back_populates="files")
 
@@ -112,31 +106,24 @@ class RoomState(Base):
     elapsed_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     overtime_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     running: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # Legacy column. The new timer uses started_at_ms so old buggy TIMESTAMP migrations remain readable.
     started_at: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    started_at_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    elapsed_ms: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
-    overtime_ms: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     current_speaker_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    overtime_allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     __mapper_args__ = {"version_id_col": version}
     room: Mapped[Room] = relationship(back_populates="state")
 
 
 class SpeakerTimerState(Base):
     __tablename__ = "speaker_timer_states"
-    __table_args__ = (
-        UniqueConstraint("room_id", "speaker_id", name="uq_timer_room_speaker"),
-        Index("ix_timer_room_speaker", "room_id", "speaker_id"),
-    )
+    __table_args__ = (UniqueConstraint("room_id", "speaker_id", name="uq_timer_room_speaker"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), index=True)
     speaker_id: Mapped[int] = mapped_column(ForeignKey("speakers.id", ondelete="CASCADE"), index=True)
     elapsed_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     overtime_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    elapsed_ms: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
-    overtime_ms: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     __mapper_args__ = {"version_id_col": version}
@@ -145,7 +132,7 @@ class SpeakerTimerState(Base):
 class FileCleanupQueue(Base):
     __tablename__ = "file_cleanup_queue"
     id: Mapped[int] = mapped_column(primary_key=True)
-    storage_name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    storage_name: Mapped[str] = mapped_column(String(255), index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     next_attempt_at: Mapped[int] = mapped_column(Integer, default=0, index=True)
     created_at: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

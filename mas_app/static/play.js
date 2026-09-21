@@ -1,343 +1,512 @@
 (() => {
   "use strict";
-  const DATA = JSON.parse(document.getElementById("play-data")?.textContent || "{}");
-  const root = document.getElementById("play-root");
-  if (!root) return;
-  const empty = document.getElementById("empty-play");
-  const content = document.getElementById("play-content");
-  const status = document.getElementById("connection-status");
-  const speakerName = document.getElementById("speaker-name");
-  const speakerMeta = document.getElementById("speaker-meta");
-  const speakerCount = document.getElementById("speaker-count");
-  const speakerStatus = document.getElementById("speaker-status");
-  const speakerTotal = document.getElementById("speaker-total");
-  const timer = document.getElementById("timer");
-  const overtime = document.getElementById("overtime");
-  const bar = document.getElementById("progress-bar");
-  const descriptionSection = document.getElementById("description-section");
-  const description = document.getElementById("speaker-description");
-  const speakerFilesSection = document.getElementById("speaker-files-section");
-  const speakerFiles = document.getElementById("speaker-files");
-  const commonFiles = document.getElementById("common-files");
-  const recordingsList = document.getElementById("recordings-list");
-  const btnStart = document.getElementById("btn-start");
-  const btnPause = document.getElementById("btn-pause");
-  const btnReset = document.getElementById("btn-reset");
-  const btnNext = document.getElementById("btn-next");
-  const btnPrev = document.getElementById("btn-prev");
-  const btnFinish = document.getElementById("btn-finish");
-  const btnDeleteSpeaker = document.getElementById("btn-delete-speaker");
-  const recordBtn = document.getElementById("record-btn");
-  const recordStatus = document.getElementById("record-status");
-  const recordDownload = document.getElementById("record-download");
-  const recordingBox = recordBtn?.closest(".recording-box");
-  const overtimeModal = document.getElementById("overtime-modal");
-  const overtimeContinue = document.getElementById("overtime-continue");
-  const overtimeFinish = document.getElementById("overtime-finish");
-  const csrf = DATA.csrf || "";
 
-  let currentState = DATA.initial_state || null;
+  const DATA = JSON.parse(document.getElementById("play-data")?.textContent || "{}");
+  const $ = id => document.getElementById(id);
+  const empty = $("empty-play");
+  const content = $("play-content");
+  const status = $("connection-status");
+  const speakerName = $("speaker-name");
+  const speakerMeta = $("speaker-meta");
+  const speakerCount = $("speaker-count");
+  const timer = $("timer");
+  const overtime = $("overtime");
+  const bar = $("progress-bar");
+  const descriptionSection = $("description-section");
+  const description = $("speaker-description");
+  const speakerFilesSection = $("speaker-files-section");
+  const speakerFiles = $("speaker-files");
+  const commonFiles = $("common-files");
+  const btnStart = $("btn-start");
+  const btnPause = $("btn-pause");
+  const btnReset = $("btn-reset");
+  const btnNext = $("btn-next");
+  const btnPrev = $("btn-prev");
+  const btnFinish = $("btn-finish");
+  const btnContinue = $("btn-continue");
+  const btnFinishAlert = $("btn-finish-alert");
+  const btnDelete = $("btn-delete-current-speaker");
+  const timeAlert = $("time-alert");
+  const recordStatus = $("record-status");
+  const recordDot = $("record-dot");
+  const deleteDialog = $("speaker-delete-dialog");
+
+  const csrf = DATA.csrf || "";
+  let state = null;
+  let polling = false;
   let pollTimer = null;
-  let syncBusy = false;
-  let raf = null;
-  let anchorPerf = performance.now();
+  let destroyed = false;
   let recorder = null;
-  let recorderStream = null;
+  let stream = null;
   let chunks = [];
-  let recordStartedAt = 0;
-  let recordingLimitTimer = null;
-  let sessionExpired = false;
-  let promptedSpeakerId = null;
-  let notificationPermissionRequested = false;
+  let recordingSpeakerId = null;
+  let recordedSeconds = 0;
+  let recordingStartedAt = 0;
+  let pendingRecording = null;
+
+  const fmt = seconds => {
+    const value = Math.max(0, Math.floor(Number(seconds) || 0));
+    return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  };
 
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-  const fmtMs = ms => {
-    ms = Math.max(0, Math.floor(Number(ms) || 0));
-    const sec = Math.floor(ms / 1000);
-    const mins = String(Math.floor(sec / 60)).padStart(2, "0");
-    const secs = String(sec % 60).padStart(2, "0");
-    return `${mins}:${secs}`;
-  };
+  const speakerById = id => DATA.speakers.find(s => Number(s.id) === Number(id)) || null;
   const setStatus = (text, ok = true) => {
+    if (!status) return;
     status.textContent = text;
     status.className = ok ? "muted status-online" : "muted status-offline";
   };
-  const speakerById = id => (currentState?.speakers || DATA.speakers || []).find(s => Number(s.id) === Number(id)) || DATA.speakers.find(s => Number(s.id) === Number(id)) || null;
+  const setRecordUI = (mode, text) => {
+    if (recordDot) recordDot.classList.toggle("active", mode === "recording");
+    if (recordStatus) recordStatus.textContent = text || "";
+  };
 
   function renderFiles(list, target) {
-    target.innerHTML = "";
-    if (!list?.length) { target.innerHTML = '<span class="muted">فایلی وجود ندارد.</span>'; return; }
+    if (!target) return;
+    target.replaceChildren();
+    if (!list?.length) {
+      target.innerHTML = '<span class="muted">فایلی وجود ندارد.</span>';
+      return;
+    }
     for (const file of list) {
       const item = document.createElement("div");
-      item.className = "file-row";
-      item.innerHTML = `<a target="_blank" rel="noopener" href="/files/${Number(file.id)}">📄 ${esc(file.name)}</a><a target="_blank" rel="noopener" href="/files/${Number(file.id)}/download">دانلود</a>`;
+      item.className = "file-item";
+      item.innerHTML = `<a target="_blank" rel="noopener" href="/files/${encodeURIComponent(file.id)}">📄 ${esc(file.name)}</a>`;
       target.appendChild(item);
     }
   }
 
-  function renderRecordings() {
-    renderFiles(DATA.recordings || [], recordingsList);
-  }
-
-  function renderSpeakerList() {
-    const list = document.getElementById("speaker-list");
-    if (!list) return;
-    list.innerHTML = "";
-    const items = currentState?.speakers || DATA.speakers || [];
-    speakerTotal.textContent = String(items.length);
-    items.forEach((s, idx) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `play-speaker${Number(s.id) === Number(currentState?.current_speaker_id) ? " current" : ""}${s.is_finished ? " finished" : ""}`;
-      button.dataset.speakerId = s.id;
-      button.innerHTML = `<span class="number">${idx + 1}</span><span>${esc(s.name || "بدون نام")}</span><span class="mini-status">${s.is_finished ? "فریز" : "فعال"}</span>`;
-      button.addEventListener("click", async () => {
-        if (Number(s.id) === Number(currentState?.current_speaker_id)) return;
-        [btnStart, btnPause, btnReset, btnPrev, btnNext, btnFinish, btnDeleteSpeaker].forEach(b => { if (b) b.disabled = true; });
-        try {
-          const fd = new FormData(); fd.append("csrf", csrf);
-          const response = await fetch(`/api/rooms/${DATA.room_id}/goto/${Number(s.id)}`, {method:"POST", body:fd, credentials:"same-origin", headers:{"Accept":"application/json"}});
-          if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || "انتقال به سخنران ناموفق بود."); }
-          closeOvertimePrompt();
-          updateState(await response.json());
-        } catch (error) { alert(error.message || "انتقال ناموفق بود."); await syncOnce(); }
-      });
-      list.appendChild(button);
-    });
-  }
-
-  function updateAnchor(state) {
-    // `elapsed_ms` in the API response is already evaluated at `server_time_ms`.
-    // Interpolate from that authoritative snapshot with the browser monotonic clock.
-    anchorPerf = performance.now();
-  }
-
-  function currentElapsedMs() {
-    if (!currentState) return 0;
-    const base = Number(currentState.elapsed_ms || 0);
-    if (!currentState.running) return Math.max(0, base);
-    return Math.max(0, base + Math.max(0, performance.now() - anchorPerf));
-  }
-
-  function renderTimer() {
-    if (!currentState || !currentState.current_speaker_id) {
-      if (timer) timer.textContent = "00:00";
-      raf = requestAnimationFrame(renderTimer);
-      return;
-    }
-    const elapsed = currentElapsedMs();
-    const limit = Number(currentState.limit_ms || 0);
-    const isFinished = Boolean(currentState.current_speaker?.is_finished);
-    const overtimeMs = Math.max(0, elapsed - limit);
-    const remainingMs = Math.max(0, limit - elapsed);
-    if (isFinished) {
-      timer.textContent = "پایان سخنرانی";
-      timer.classList.add("finished");
-      overtime.textContent = overtimeMs > 0 ? `زمان اضافه ثبت‌شده: +${fmtMs(overtimeMs)}` : "";
-      bar.style.width = "100%";
-    } else {
-      timer.classList.remove("finished");
-      timer.textContent = fmtMs(overtimeMs > 0 ? 0 : remainingMs);
-      overtime.textContent = overtimeMs > 0 ? `زمان اضافه: +${fmtMs(overtimeMs)}` : "";
-      const pct = limit > 0 ? Math.min(100, (remainingMs / limit) * 100) : 0;
-      bar.style.width = `${pct}%`;
-      if (currentState.running && elapsed >= limit && promptedSpeakerId !== Number(currentState.current_speaker_id)) {
-        promptedSpeakerId = Number(currentState.current_speaker_id);
-        openOvertimePrompt();
-      }
-    }
-    raf = requestAnimationFrame(renderTimer);
-  }
-
-  function updateState(state) {
+  function setButtons() {
     if (!state) return;
-    const previousId = Number(currentState?.current_speaker_id || 0);
-    currentState = state;
-    updateAnchor(state);
-    if (previousId !== Number(state.current_speaker_id || 0)) promptedSpeakerId = null;
-    if (!state.current_speaker_id) {
+    const running = Boolean(state.running);
+    const waiting = Boolean(state.awaiting_decision);
+    const completed = Boolean(state.completed);
+    const hasPending = Boolean(pendingRecording);
+    const hasCurrentRecorder = Boolean(recorder && recordingSpeakerId === state.current_speaker_id);
+
+    if (btnStart) btnStart.disabled = running || waiting || completed || hasPending;
+    if (btnPause) btnPause.disabled = !running || hasPending;
+    if (btnContinue) btnContinue.disabled = !waiting || hasPending;
+    if (btnFinish) btnFinish.disabled = !state.current_speaker_id || completed || Boolean(hasPending && pendingRecording?.speakerId !== state.current_speaker_id);
+    if (btnFinishAlert) btnFinishAlert.disabled = !waiting || Boolean(hasPending);
+    if (btnReset) btnReset.disabled = running || waiting || hasCurrentRecorder || hasPending || !(Number(state.elapsed_seconds) || Number(state.overtime_seconds));
+    if (btnPrev) btnPrev.disabled = running || waiting || hasCurrentRecorder || hasPending || state.current_index <= 0;
+    if (btnNext) btnNext.disabled = running || waiting || hasCurrentRecorder || hasPending || state.current_index >= state.total_speakers - 1;
+    // Deletion is intentionally allowed while the timer is running: the active recorder
+    // is stopped first and the user is asked whether to save it.
+    if (btnDelete) btnDelete.disabled = !state.current_speaker_id || Boolean(hasPending && pendingRecording?.speakerId !== state.current_speaker_id) || completed;
+  }
+
+  function updateState(next) {
+    state = next;
+    if (!DATA.speakers.length || !next.current_speaker_id || next.completed && !next.current_speaker_id) {
       empty.hidden = false;
       content.hidden = true;
-      speakerCount.textContent = "۰ / ۰";
-      renderSpeakerList();
+      if (speakerCount) speakerCount.textContent = "۰ / ۰";
+      setButtons();
       return;
     }
     empty.hidden = true;
     content.hidden = false;
-    const speaker = state.current_speaker || speakerById(state.current_speaker_id);
-    if (!speaker) return;
+
+    const fallback = speakerById(next.current_speaker_id) || {};
+    const speaker = {...fallback, ...(next.current_speaker || {})};
     speakerName.textContent = speaker.name || "بدون نام";
-    const meta = [speaker.gender, speaker.age ? `سن ${speaker.age}` : ""].filter(Boolean).join(" · ");
-    speakerMeta.textContent = meta || "";
-    speakerCount.textContent = `${state.current_index + 1} / ${state.total_speakers}`;
-    speakerStatus.textContent = speaker.is_finished ? "فریز شده" : (state.running ? "در حال سخنرانی" : "آماده");
-    speakerStatus.className = speaker.is_finished ? "badge danger-badge" : "badge";
-    if (speaker.description) { descriptionSection.hidden = false; description.textContent = speaker.description; }
-    else { descriptionSection.hidden = true; description.textContent = ""; }
+    speakerMeta.textContent = [speaker.gender, speaker.age ? `سن ${speaker.age}` : ""].filter(Boolean).join(" · ");
+    speakerCount.textContent = `${Number(next.current_index || 0) + 1} / ${Number(next.total_speakers || 0)}`;
+    timer.textContent = fmt(next.remaining_seconds);
+    timer.classList.toggle("running", Boolean(next.running));
+    overtime.textContent = next.overtime_seconds ? `زمان اضافه: +${fmt(next.overtime_seconds)}` : "";
+    const limit = Number(next.limit_seconds || speaker.seconds || 0);
+    bar.style.width = `${limit ? Math.max(0, Math.min(100, Number(next.remaining_seconds || 0) / limit * 100)) : 0}%`;
+
+    if (speaker.description) {
+      descriptionSection.hidden = false;
+      description.textContent = speaker.description;
+    } else {
+      descriptionSection.hidden = true;
+      description.textContent = "";
+    }
+
     speakerFilesSection.hidden = !DATA.live_files;
     if (DATA.live_files) renderFiles(speaker.files || [], speakerFiles);
     renderFiles(DATA.common || [], commonFiles);
-    renderRecordings();
-    btnStart.disabled = Boolean(state.running) || Boolean(speaker.is_finished);
-    btnPause.disabled = !state.running;
-    btnReset.disabled = Boolean(speaker.is_finished) || !Number(state.elapsed_ms) && !Number(state.overtime_ms);
-    btnPrev.disabled = state.current_index <= 0;
-    btnNext.disabled = !(state.speakers || []).slice(state.current_index + 1).some(s => !s.is_finished);
-    btnFinish.disabled = Boolean(speaker.is_finished);
-    btnDeleteSpeaker.disabled = false;
-    renderSpeakerList();
+
+    timeAlert.hidden = !next.awaiting_decision;
+    timer.setAttribute("aria-live", next.awaiting_decision ? "assertive" : "off");
+    if (next.awaiting_decision) {
+      timer.textContent = "00:00";
+      pauseRecorder("زمان اصلی تمام شد؛ ضبط موقتاً متوقف است.");
+    }
+    if (next.completed) setStatus("سخنرانی‌ها به پایان رسیده‌اند", true);
+    setButtons();
   }
 
   async function api(action) {
-    const fd = new FormData(); fd.append("csrf", csrf);
-    const response = await fetch(`/api/rooms/${DATA.room_id}/${action}`, {method:"POST", body:fd, credentials:"same-origin", headers:{"Accept":"application/json"}});
-    if (response.status === 401) { sessionExpired = true; setStatus("نشست شما منقضی شده است؛ دوباره وارد شوید.", false); stopPolling(); return null; }
-    if (!response.ok) {
-      let msg = "عملیات ناموفق بود.";
-      try { const body = await response.json(); if (body.detail) msg = body.detail; } catch (_) {}
-      throw new Error(msg);
+    const fd = new FormData();
+    fd.append("csrf", csrf);
+    const response = await fetch(`/api/rooms/${DATA.room_id}/${action}`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {Accept: "application/json"},
+    });
+    if (response.status === 401) {
+      window.location.assign("/login");
+      return null;
     }
-    return response.json();
-  }
-
-  async function control(action) {
-    [btnStart, btnPause, btnReset, btnPrev, btnNext, btnFinish, btnDeleteSpeaker].forEach(b => { if (b) b.disabled = true; });
-    try { const state = await api(action); if (state) updateState(state); }
-    catch (error) { alert(error.message || "عملیات ناموفق بود."); await syncOnce(); }
-  }
-
-  async function deleteCurrentSpeaker() {
-    const id = Number(currentState?.current_speaker_id || 0);
-    const speaker = speakerById(id);
-    if (!id || !speaker) return;
-    if (!confirm(`سخنران «${speaker.name || "بدون نام"}» حذف شود؟ در صورت حذف سخنران فعلی، سایت خودکار به سخنران بعدی فعال می‌رود.`)) return;
-    const fd = new FormData(); fd.append("csrf", csrf);
-    btnDeleteSpeaker.disabled = true;
-    try {
-      const response = await fetch(`/api/rooms/${DATA.room_id}/speakers/${id}/delete`, {method:"POST", body:fd, credentials:"same-origin", headers:{"Accept":"application/json"}});
-      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || "حذف سخنران ناموفق بود."); }
-      updateState(await response.json());
-    } catch (e) { alert(e.message); btnDeleteSpeaker.disabled = false; }
+    let body = null;
+    try { body = await response.json(); } catch (_) {}
+    if (!response.ok) throw new Error(body?.detail || "عملیات ناموفق بود.");
+    return body;
   }
 
   async function syncOnce() {
-    if (syncBusy || sessionExpired) return;
-    syncBusy = true;
+    if (polling || destroyed) return null;
+    polling = true;
     try {
-      const response = await fetch(`/api/rooms/${DATA.room_id}/state`, {credentials:"same-origin", headers:{"Accept":"application/json"}});
-      if (response.status === 401) { sessionExpired = true; setStatus("نشست شما منقضی شده است؛ دوباره وارد شوید.", false); stopPolling(); return; }
+      const response = await fetch(`/api/rooms/${DATA.room_id}/state`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {Accept: "application/json"},
+      });
+      if (response.status === 401) {
+        window.location.assign("/login");
+        return null;
+      }
       if (!response.ok) throw new Error("state failed");
-      updateState(await response.json()); setStatus("همگام‌سازی فعال است", true);
-    } catch (_) { setStatus("ارتباط با سرور قطع شده؛ تلاش مجدد…", false); }
-    finally { syncBusy = false; }
+      const next = await response.json();
+      updateState(next);
+      setStatus("همگام‌سازی فعال است", true);
+      return next;
+    } catch (_) {
+      setStatus("ارتباط با سرور قطع شده؛ تلاش مجدد…", false);
+      return null;
+    } finally {
+      polling = false;
+    }
   }
 
   function schedulePoll() {
     if (pollTimer) clearTimeout(pollTimer);
-    if (document.hidden || sessionExpired) return;
-    const interval = currentState?.running ? 1500 : 5000;
-    pollTimer = setTimeout(async () => { await syncOnce(); schedulePoll(); }, interval);
+    if (document.hidden || destroyed) return;
+    pollTimer = setTimeout(async () => {
+      await syncOnce();
+      schedulePoll();
+    }, 800);
   }
-  function stopPolling() { if (pollTimer) clearTimeout(pollTimer); pollTimer = null; }
 
-  async function requestNotificationPermission() {
-    if (notificationPermissionRequested) return;
-    notificationPermissionRequested = true;
-    if ("Notification" in window && Notification.permission === "default") {
-      try { await Notification.requestPermission(); } catch (_) {}
+  function chooseMime() {
+    const types = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/ogg",
+      "audio/mp4",
+    ];
+    return types.find(type => window.MediaRecorder?.isTypeSupported?.(type)) || "";
+  }
+
+  function activeDurationNow() {
+    return recordedSeconds + (recordingStartedAt ? Math.max(0, (Date.now() - recordingStartedAt) / 1000) : 0);
+  }
+
+  function pauseRecorder(message = "ضبط موقتاً متوقف شد.") {
+    if (!recorder) return;
+    if (recorder.state === "recording") {
+      recordedSeconds = activeDurationNow();
+      recordingStartedAt = 0;
+      try { recorder.pause(); } catch (_) {}
+      setRecordUI("paused", message);
     }
   }
 
-  function openOvertimePrompt() {
-    overtimeModal.hidden = false;
-    const id = Number(currentState?.current_speaker_id || 0);
-    const speaker = speakerById(id);
-    if ("Notification" in window && Notification.permission === "granted") {
-      try { new Notification("زمان سخنران تمام شد", {body: `زمان مجاز «${speaker?.name || "سخنران"}» به پایان رسید.`}); } catch (_) {}
-    }
-  }
-  function closeOvertimePrompt() { overtimeModal.hidden = true; }
-
-  function chooseMimeType() {
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-    return candidates.find(type => window.MediaRecorder?.isTypeSupported?.(type)) || "";
-  }
-  function extForMime(mime) {
-    mime = String(mime || "").toLowerCase();
-    if (mime.includes("ogg")) return "ogg";
-    if (mime.includes("mp4")) return "m4a";
-    if (mime.includes("mpeg")) return "mp3";
-    return "webm";
-  }
-  function blobTooLarge(blob) {
-    return Number(blob?.size || 0) > Number(DATA.max_upload_bytes || 0);
-  }
-
-  async function toggleRecording() {
-    if (!recordBtn) return;
-    if (recorder?.state === "recording") { recordBtn.disabled = true; recorder.stop(); return; }
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { recordStatus.textContent = "ضبط صوت در این مرورگر در دسترس نیست."; return; }
-    await requestNotificationPermission();
+  function resumeRecorder() {
+    if (!recorder || recorder.state !== "paused") return;
     try {
-      recorderStream = await navigator.mediaDevices.getUserMedia({audio:true});
-      const mime = chooseMimeType();
-      const options = {audioBitsPerSecond:Number(DATA.recording_bitrate_bps || 32000)};
-      if (mime) options.mimeType = mime;
-      recorder = new MediaRecorder(recorderStream, options);
-      chunks = []; recordStartedAt = Date.now();
-      clearTimeout(recordingLimitTimer);
-      recordingLimitTimer = setTimeout(() => { if (recorder?.state === "recording") { recordStatus.textContent = "به سقف مدت ضبط رسید؛ در حال ذخیره…"; recorder.stop(); } }, Number(DATA.max_recording_seconds || 0) * 1000);
-      recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
-      recorder.onstop = async () => {
-        clearTimeout(recordingLimitTimer);
-        const duration = Math.min(Number(DATA.max_recording_seconds || 0), Math.round((Date.now() - recordStartedAt) / 1000));
-        const actualType = recorder?.mimeType || mime || "audio/webm";
-        const blob = new Blob(chunks, {type:actualType});
-        recorderStream?.getTracks().forEach(track => track.stop()); recorderStream = null; recorder = null; chunks = [];
-        if (blobTooLarge(blob)) {
-          const url = URL.createObjectURL(blob);
-          recordDownload.hidden = false; recordDownload.href = url; recordDownload.download = `recording-${Date.now()}.${extForMime(actualType)}`;
-          recordStatus.textContent = "فایل از سقف سرور بزرگ‌تر است. فایل برای ذخیره محلی آماده شد و به سرور ارسال نشد.";
-          recordBtn.disabled = false; recordBtn.textContent = "● شروع ضبط"; return;
-        }
-        try {
-          const fd = new FormData(); fd.append("csrf", csrf); fd.append("duration_seconds", String(Math.max(1, duration)));
-          fd.append("file", blob, `recording-${new Date().toISOString().replace(/[:.]/g,"-")}.${extForMime(actualType)}`);
-          recordStatus.textContent = "در حال ذخیره ضبط…";
-          const response = await fetch(`/api/rooms/${DATA.room_id}/recording`, {method:"POST", body:fd, credentials:"same-origin", headers:{"Accept":"application/json"}});
-          const saved = await response.json().catch(() => ({}));
-          if (!response.ok) { throw new Error(saved.detail || "ذخیره ضبط ناموفق بود."); }
-          if (saved.file) { DATA.recordings = [saved.file, ...(DATA.recordings || [])]; }
-          recordDownload.hidden = true; recordStatus.textContent = "ضبط ذخیره شد."; renderRecordings();
-        } catch (error) {
-          const url = URL.createObjectURL(blob); recordDownload.hidden = false; recordDownload.href = url; recordDownload.download = `recording-${Date.now()}.${extForMime(actualType)}`;
-          recordStatus.textContent = `${error.message || "ذخیره ضبط ناموفق بود."} فایل برای ذخیره محلی آماده شد.`;
-        } finally { recordBtn.disabled = false; recordBtn.textContent = "● شروع ضبط"; recordingBox?.classList.remove("recording"); }
-      };
-      recorder.onerror = () => { clearTimeout(recordingLimitTimer); recorderStream?.getTracks().forEach(track => track.stop()); recorderStream = null; recorder = null; recordStatus.textContent = "ضبط با خطا متوقف شد."; recordBtn.disabled = false; recordBtn.textContent = "● شروع ضبط"; };
-      recorder.start(1000); recordBtn.textContent = "■ توقف ضبط"; recordStatus.textContent = "در حال ضبط…"; recordingBox?.classList.add("recording");
-      recordDownload.hidden = true;
+      recordingStartedAt = Date.now();
+      recorder.resume();
+      setRecordUI("recording", "در حال ضبط خودکار…");
     } catch (_) {
-      clearTimeout(recordingLimitTimer); recorderStream?.getTracks().forEach(track => track.stop()); recorderStream = null;
-      recordStatus.textContent = "اجازهٔ دسترسی به میکروفون داده نشد یا میکروفون در دسترس نیست."; recordBtn.disabled = false; recordBtn.textContent = "● شروع ضبط";
+      setRecordUI("error", "ادامهٔ ضبط در این مرورگر ممکن نیست.");
     }
   }
 
-  btnStart?.addEventListener("click", () => { requestNotificationPermission(); control("start"); });
+  async function ensureRecorder(speakerId) {
+    if (!DATA.recording) return;
+    if (!speakerId) throw new Error("سخنران فعلی مشخص نیست.");
+    if (recorder && recordingSpeakerId === speakerId) return;
+    if (recorder) throw new Error("ضبط سخنران قبلی هنوز بسته نشده است.");
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      throw new Error("ضبط صدا در این مرورگر در دسترس نیست.");
+    }
+    stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const mime = chooseMime();
+    const options = {audioBitsPerSecond: 24000};
+    if (mime) options.mimeType = mime;
+    try {
+      recorder = new MediaRecorder(stream, options);
+    } catch (_) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+      recorder = null;
+      throw new Error("مرورگر این نوع ضبط صدا را پشتیبانی نمی‌کند.");
+    }
+    recordingSpeakerId = Number(speakerId);
+    chunks = [];
+    recordedSeconds = 0;
+    recordingStartedAt = 0;
+    recorder.ondataavailable = event => {
+      if (event.data?.size) chunks.push(event.data);
+    };
+    recorder.onerror = () => setRecordUI("error", "ضبط صدا با خطا متوقف شد.");
+  }
+
+  function stopRecorderAndMakeBlob() {
+    return new Promise((resolve, reject) => {
+      if (!recorder) {
+        resolve(pendingRecording || null);
+        return;
+      }
+      const r = recorder;
+      recordedSeconds = activeDurationNow();
+      recordingStartedAt = 0;
+      const speakerId = recordingSpeakerId;
+      const finish = () => {
+        try {
+          const mime = r.mimeType || "audio/webm";
+          const blob = new Blob(chunks, {type: mime});
+          stream?.getTracks().forEach(track => track.stop());
+          stream = null;
+          chunks = [];
+          recorder = null;
+          recordingSpeakerId = null;
+          const info = {blob, duration: Math.round(Math.max(0, recordedSeconds)), speakerId};
+          return info;
+        } catch (error) {
+          reject(error);
+          return null;
+        }
+      };
+      const done = () => {
+        const info = finish();
+        if (info) resolve(info);
+      };
+      r.addEventListener("stop", done, {once: true});
+      try {
+        if (r.state !== "inactive") r.stop();
+        else done();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async function startRecorder(speakerId) {
+    if (!DATA.recording) return;
+    await ensureRecorder(speakerId);
+    if (!recorder) return;
+    if (recorder.state === "inactive") {
+      recordingStartedAt = Date.now();
+      recorder.start(1000);
+      setRecordUI("recording", "در حال ضبط خودکار…");
+    } else if (recorder.state === "paused") {
+      resumeRecorder();
+    }
+  }
+
+  function recordingName(info) {
+    const ext = (info.blob.type || "").includes("ogg") ? "ogg" : ((info.blob.type || "").includes("mp4") ? "mp4" : "webm");
+    return `recording-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+  }
+
+  async function uploadBlob(info) {
+    if (!info?.blob || info.blob.size === 0) return true;
+    setRecordUI("paused", "در حال ذخیره ضبط…");
+    const fd = new FormData();
+    fd.append("csrf", csrf);
+    fd.append("speaker_id", String(info.speakerId || ""));
+    fd.append("duration_seconds", String(Math.min(Math.round(info.duration || 0), Number(DATA.max_recording_seconds || 10800))));
+    fd.append("file", info.blob, recordingName(info));
+    const response = await fetch(`/api/rooms/${DATA.room_id}/recording`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {Accept: "application/json"},
+    });
+    if (response.status === 401) {
+      window.location.assign("/login");
+      return false;
+    }
+    let body = null;
+    try { body = await response.json(); } catch (_) {}
+    if (!response.ok) throw new Error(body?.detail || "ذخیره ضبط ناموفق بود.");
+    setRecordUI("idle", "ضبط ذخیره شد.");
+    return true;
+  }
+
+  async function uploadOrKeepPending(info) {
+    if (!info) return;
+    try {
+      await uploadBlob(info);
+      if (pendingRecording === info) pendingRecording = null;
+    } catch (error) {
+      pendingRecording = info;
+      setRecordUI("error", `${error.message} فایل ضبط فعلاً نگه داشته شد.`);
+      throw error;
+    }
+  }
+
+  function discardLocalRecorder() {
+    if (recorder) {
+      try { if (recorder.state !== "inactive") recorder.stop(); } catch (_) {}
+    }
+    stream?.getTracks().forEach(track => track.stop());
+    stream = null;
+    recorder = null;
+    chunks = [];
+    recordingSpeakerId = null;
+    recordedSeconds = 0;
+    recordingStartedAt = 0;
+  }
+
+  async function control(action) {
+    [btnStart, btnPause, btnReset, btnPrev, btnNext, btnFinish, btnContinue, btnFinishAlert, btnDelete].forEach(button => { if (button) button.disabled = true; });
+    try {
+      const speakerId = state?.current_speaker_id;
+      if (action === "start") {
+        if (DATA.recording) await ensureRecorder(speakerId);
+        const next = await api("start");
+        if (next) {
+          updateState(next);
+          if (next.running && DATA.recording) await startRecorder(speakerId);
+        }
+      } else if (action === "continue") {
+        const next = await api("continue");
+        if (next) {
+          updateState(next);
+          if (next.running && DATA.recording) await startRecorder(next.current_speaker_id);
+        }
+      } else if (action === "pause") {
+        const next = await api("pause");
+        if (next) {
+          updateState(next);
+          pauseRecorder();
+        }
+      } else if (action === "finish") {
+        let info = null;
+        if (DATA.recording) {
+          info = await stopRecorderAndMakeBlob();
+          if (info?.blob?.size) {
+            pendingRecording = info;
+            await uploadOrKeepPending(info);
+          }
+        }
+        const next = await api("finish");
+        if (next) {
+          pendingRecording = null;
+          discardLocalRecorder();
+          updateState(next);
+          setRecordUI("idle", next.completed ? "سخنرانی‌ها تمام شدند." : "آمادهٔ ضبط خودکار سخنران بعدی.");
+        }
+      } else {
+        const next = await api(action);
+        if (next) {
+          if ((action === "next" || action === "prev" || action === "reset") && recorder) discardLocalRecorder();
+          if (action === "next" || action === "prev" || action === "reset") pendingRecording = null;
+          updateState(next);
+          if (DATA.recording) setRecordUI("idle", "آمادهٔ ضبط خودکار.");
+        }
+      }
+    } catch (error) {
+      alert(error.message || "عملیات ناموفق بود.");
+      await syncOnce();
+    } finally {
+      setButtons();
+    }
+  }
+
+  function chooseDeleteResult() {
+    if (!deleteDialog) return Promise.resolve("cancel");
+    return new Promise(resolve => {
+      const done = () => {
+        deleteDialog.removeEventListener("close", done);
+        resolve(deleteDialog.returnValue || "cancel");
+      };
+      deleteDialog.addEventListener("close", done, {once: true});
+      deleteDialog.showModal();
+    });
+  }
+
+  async function deleteCurrentSpeaker() {
+    const speakerId = state?.current_speaker_id;
+    if (!speakerId) return;
+    const choice = await chooseDeleteResult();
+    if (choice === "cancel") return;
+    const currentIsRecording = Boolean(recorder && recordingSpeakerId === speakerId && recorder.state !== "inactive");
+    let info = pendingRecording?.speakerId === speakerId ? pendingRecording : null;
+    try {
+      if (currentIsRecording) info = await stopRecorderAndMakeBlob();
+      if (info) pendingRecording = info;
+
+      const form = new FormData();
+      form.append("csrf", csrf);
+      form.append("save_recording", choice === "save" ? "1" : "0");
+      if (choice === "save" && info?.blob?.size) {
+        form.append("duration_seconds", String(Math.round(info.duration || 0)));
+        form.append("recording", info.blob, recordingName(info));
+      }
+      const response = await fetch(`/api/rooms/${DATA.room_id}/speakers/${speakerId}/delete`, {
+        method: "POST",
+        body: form,
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {Accept: "application/json"},
+      });
+      if (response.status === 401) { window.location.assign("/login"); return; }
+      let body = null;
+      try { body = await response.json(); } catch (_) {}
+      if (!response.ok) throw new Error(body?.detail || "حذف سخنران ناموفق بود.");
+      pendingRecording = null;
+      discardLocalRecorder();
+      await syncOnce();
+      setRecordUI("idle", "سخنران حذف شد.");
+    } catch (error) {
+      alert(error.message || "حذف سخنران ناموفق بود.");
+      await syncOnce();
+    } finally {
+      setButtons();
+    }
+  }
+
+  btnStart?.addEventListener("click", () => control("start"));
   btnPause?.addEventListener("click", () => control("pause"));
   btnReset?.addEventListener("click", () => control("reset"));
   btnNext?.addEventListener("click", () => control("next"));
   btnPrev?.addEventListener("click", () => control("prev"));
   btnFinish?.addEventListener("click", () => control("finish"));
-  btnDeleteSpeaker?.addEventListener("click", deleteCurrentSpeaker);
-  overtimeContinue?.addEventListener("click", async () => { closeOvertimePrompt(); await control("continue_overtime"); });
-  overtimeFinish?.addEventListener("click", async () => { closeOvertimePrompt(); await control("finish"); });
-  recordBtn?.addEventListener("click", toggleRecording);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) stopPolling(); else { syncOnce(); schedulePoll(); } });
-  window.addEventListener("beforeunload", event => { if (recorder?.state === "recording") { event.preventDefault(); event.returnValue = "ضبط صدا هنوز فعال است."; } });
+  btnContinue?.addEventListener("click", () => control("continue"));
+  btnFinishAlert?.addEventListener("click", () => control("finish"));
+  btnDelete?.addEventListener("click", deleteCurrentSpeaker);
 
-  updateState(currentState || {speakers:DATA.speakers || [], current_speaker_id:null, total_speakers:0});
-  renderRecordings();
-  raf = requestAnimationFrame(renderTimer);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+    } else {
+      syncOnce().finally(schedulePoll);
+    }
+  });
+
+  window.addEventListener("beforeunload", event => {
+    if (recorder?.state && recorder.state !== "inactive" || pendingRecording) {
+      event.preventDefault();
+      event.returnValue = "ضبط صدا هنوز ذخیره نشده است.";
+    }
+  });
+
+  renderFiles(DATA.common || [], commonFiles);
   syncOnce().finally(schedulePoll);
 })();
