@@ -1,1 +1,19 @@
-{% extends "auth.html" %}{% block auth_content %}<form method="post" action="/register" class="stack"><input type="hidden" name="auth_token" value="{{ auth_form_token }}"><label>نام کاربری انگلیسی<input name="username" pattern="[A-Za-z0-9_]+" minlength="3" maxlength="32" autocomplete="username" required placeholder="hossein_20"></label><label>رمز عبور<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></label><label>تکرار رمز عبور<input name="password2" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></label><button class="primary wide" type="submit">ایجاد حساب</button></form><p class="auth-link"><a href="/login">بازگشت به ورود</a></p>{% endblock %}
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>{{ title }}</title><link rel="stylesheet" href="/static/app.css"></head>
+<body class="auth-bg">
+<main class="auth-card">
+  <div class="brand-mark">مــاس</div>
+  <h1>{{ title }}</h1><p class="muted">{{ subtitle }}</p>
+  {% if error %}<div class="flash danger">{{ error }}</div>{% endif %}
+  <form method="post" action="/register" class="form-stack">
+    <input type="hidden" name="guest_csrf" value="{{ guest_csrf }}">
+    <label>نام کاربری<input name="username" autocomplete="username" required maxlength="32" pattern="[A-Za-z0-9_]{3,32}" dir="ltr"></label>
+    <label>رمز عبور<input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="128" dir="ltr"></label>
+    <label>تکرار رمز عبور<input type="password" name="password2" autocomplete="new-password" required minlength="8" maxlength="128" dir="ltr"></label>
+    <button class="primary wide" type="submit">ساخت حساب</button>
+  </form>
+  <p class="auth-switch">حساب دارید؟ <a href="/login">ورود</a></p>
+</main>
+</body>
+</html>
