@@ -1,6 +1,38 @@
+# پایتون
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# دادهٔ محلی (هرگز commit نشود)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+*.zip
+uploads/
+storage/
 .env
-mas.db
-uploads/*
-!.gitkeep
+.env.*
+!.env.example
+
+# فرانت‌اند
+node_modules/
+frontend/node_modules/
+frontend/.vite/
+# توجه: frontend/dist عمداً ignore نشده است؛
+# چون Render با Native Runtime پایتون، Node ندارد و assets باید از قبل build شده باشند.
+
+# سیستم‌عامل / ویرایشگر
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

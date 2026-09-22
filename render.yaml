@@ -3,8 +3,12 @@ services:
     name: mas
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers
     healthCheckPath: /health
+    disk:
+      name: mas-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.10
@@ -14,5 +18,11 @@ services:
         value: "1"
       - key: MAS_SECRET_KEY
         generateValue: true
+      - key: MAS_STORAGE_BACKEND
+        value: local
+      - key: MAS_STORAGE_DIR
+        value: /var/data/uploads
+      - key: MAS_TRUSTED_PROXY_HOPS
+        value: "1"
       - key: DATABASE_URL
         sync: false

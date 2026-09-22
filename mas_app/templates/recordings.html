@@ -1,7 +1,0 @@
-{% extends "base.html" %}
-{% block content %}
-<div class="page-head"><div><h1>آرشیو ضبط‌ها</h1><p class="muted">فایل‌های ضبط‌شده اتاق‌های شما</p></div></div>
-{% if recordings %}<div class="recording-list">{% for item in recordings %}<article class="card recording-row"><div><strong>{{ item.filename }}</strong><p class="muted">اتاق: {{ item.room_name }} · {{ item.size_label }} · {{ item.created_label }}</p></div><div class="row gap"><a class="secondary" href="/files/{{ item.id }}" target="_blank" rel="noopener">پخش</a><a class="secondary" href="/files/{{ item.id }}/download">دانلود</a><button type="button" class="danger delete-file" data-file-id="{{ item.id }}">حذف</button></div></article>{% endfor %}</div>{% else %}<div class="empty card"><h2>هنوز ضبطی ذخیره نشده</h2><p class="muted">از صفحه پخش یک اتاق، ضبط صوت را فعال کنید.</p></div>{% endif %}
-<script type="application/json" id="recordings-data">{{ {'csrf': csrf}|tojson }}</script>
-<script src="/static/files.js" defer></script>
-{% endblock %}
