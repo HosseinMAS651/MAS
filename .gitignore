@@ -17,8 +17,8 @@ htmlcov/
 *.db-shm
 *.sqlite3
 *.zip
-uploads/
-storage/
+/uploads/
+/storage/
 .env
 .env.*
 !.env.example

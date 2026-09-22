@@ -7,7 +7,12 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_ZIP = ROOT_DIR / "mas_v2_release.zip"
 
-EXCLUDED_DIRS = {
+EXCLUDED_ROOT_DIRS = {
+    "uploads",
+    "storage",
+}
+
+EXCLUDED_ANYWHERE_DIRS = {
     ".git",
     ".venv",
     "venv",
@@ -16,8 +21,6 @@ EXCLUDED_DIRS = {
     ".pytest_cache",
     ".ruff_cache",
     ".vite",
-    "uploads",
-    "storage",
 }
 
 EXCLUDED_EXTENSIONS = {
@@ -38,8 +41,11 @@ EXCLUDED_FILES = {
 
 
 def should_include(rel_path: Path) -> bool:
+    if rel_path.parts[0] in EXCLUDED_ROOT_DIRS:
+        return False
+
     for part in rel_path.parts:
-        if part in EXCLUDED_DIRS:
+        if part in EXCLUDED_ANYWHERE_DIRS:
             return False
 
     if rel_path.name in EXCLUDED_FILES:
@@ -54,7 +60,12 @@ def create_release_zip():
 
     with zipfile.ZipFile(OUTPUT_ZIP, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(ROOT_DIR):
-            dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS]
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in EXCLUDED_ANYWHERE_DIRS
+                and not (Path(root) == ROOT_DIR and d in EXCLUDED_ROOT_DIRS)
+            ]
 
             for file in files:
                 abs_path = Path(root) / file

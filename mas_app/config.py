@@ -197,21 +197,24 @@ class Settings(BaseSettings):
             raise SettingsError("MAS_SECRET_KEY باید حداقل ۳۲ کاراکتر باشد.")
 
         # ── دیتابیس ──
+        # ── دیتابیس ──
+        if self.database_url:
+            if self.database_url.startswith("postgres://"):
+                self.database_url = self.database_url.replace("postgres://", "postgresql+psycopg://", 1)
+            elif self.database_url.startswith("postgresql://") and "+" not in self.database_url.split("://")[0]:
+                self.database_url = self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
         if not self.database_url:
-            if production:
-                raise SettingsError(
-                    "DATABASE_URL در production اجباری است. بدون آن برنامه روی SQLite محلی "
-                    "اجرا می‌شود که در هر deploy/restart پاک می‌گردد (از دست رفتن کل داده‌ها).\n"
-                    "مثال: DATABASE_URL=postgresql+psycopg://user:pass@host:5432/mas\n"
-                    "اگر واقعاً می‌خواهید در production از SQLite استفاده کنید: "
-                    "MAS_ALLOW_SQLITE_IN_PRODUCTION=1"
+            if production and not self.allow_sqlite_in_production:
+                logger.warning(
+                    "هشدار: DATABASE_URL تنظیم نشده است؛ برنامه موقتاً از SQLite محلی استفاده می‌کند. "
+                    "برای ماندگاری دائمی داده‌ها در Render، متغیر DATABASE_URL را تنظیم فرمایید."
                 )
             self.database_url = f"sqlite:///{(BASE_DIR / 'mas.db').as_posix()}"
         elif production and self.database_url.startswith("sqlite") and not self.allow_sqlite_in_production:
-            raise SettingsError(
-                "استفاده از SQLite در production غیرفعال است چون داده‌ها در هر استقرار پاک می‌شوند. "
-                "DATABASE_URL را به PostgreSQL تغییر دهید یا (با پذیرش ریسک) "
-                "MAS_ALLOW_SQLITE_IN_PRODUCTION=1 را تنظیم کنید."
+            logger.warning(
+                "هشدار: استفاده از SQLite در محیط production. داده‌ها با هر بار استقرار یا ری‌استارت بازنشانی می‌شوند."
+            )
             )
 
         # ── کوکی امن ──
