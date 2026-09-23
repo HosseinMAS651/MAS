@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: mas
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: sh -c "uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers"
+    healthCheckPath: /ready
+    disk:
+      name: mas-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: MAS_ENV
+        value: production
+      - key: MAS_COOKIE_SECURE
+        value: "1"
+      - key: MAS_SECRET_KEY
+        generateValue: true
+      - key: MAS_STORAGE_BACKEND
+        value: local
+      - key: MAS_STORAGE_DIR
+        value: /var/data/uploads
+      - key: MAS_TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: MAS_CSRF_PROTECTION_ENABLED
+        value: "1"
+      - key: DATABASE_URL
+        sync: false

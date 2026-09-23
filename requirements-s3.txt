@@ -1,0 +1,3 @@
+# فقط وقتی MAS_STORAGE_BACKEND=s3 باشد لازم است:
+#   pip install -r requirements.txt -r requirements-s3.txt
+boto3==1.43.99

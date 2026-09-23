@@ -1,0 +1,12 @@
+# هستهٔ برنامه — نسخه‌ها دقیقاً pin شده‌اند (تست‌شده با Python 3.11 و 3.12)
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn[standard]==0.53.0
+python-multipart==0.0.32
+SQLAlchemy==2.0.54
+alembic==1.20.0
+psycopg[binary]==3.3.6
+pydantic==2.13.5
+pydantic-settings==2.15.0
+argon2-cffi==25.1.0
+qrcode==8.0
