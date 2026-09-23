@@ -6,6 +6,7 @@ import { formatMs, formatBytes } from '../utils/formatters';
 import { AudioRecorder } from '../utils/audioRecorder';
 import { OvertimeModal } from '../components/OvertimeModal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { Modal } from '../components/Modal';
 import { QrModal } from '../components/QrModal';
 
 export const PlayPage: React.FC = () => {
