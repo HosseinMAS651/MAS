@@ -45,48 +45,48 @@ export const AdminDashboardPage: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-24 text-gray-400 font-bold">در حال بارگذاری پنل مدیریت…</div>;
+    return <div className="text-center py-24 text-gray-400 dark:text-slate-500 font-bold">در حال بارگذاری پنل مدیریت…</div>;
   }
   if (error) {
-    return <div className="p-8 text-center text-red-600 font-bold">{error}</div>;
+    return <div className="p-8 text-center text-red-600 dark:text-red-400 font-bold">{error}</div>;
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       <div>
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight">پنل مدیریت سامانه (Admin)</h1>
-        <p className="text-sm text-gray-500 mt-1">نظارت بر مصرف منابع، کاربران، جلسات و لاگ‌های امنیتی</p>
+        <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">پنل مدیریت سامانه (Admin)</h1>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">نظارت بر مصرف منابع، کاربران، جلسات و لاگ‌های امنیتی</p>
       </div>
 
       {/* کارت‌های آمار کلیدی */}
       {stats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-1">
-            <span className="text-xs font-bold text-gray-400">تعداد کل کاربران</span>
-            <div className="text-3xl font-black text-blue-600">{stats.users_count}</div>
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-1 transition-colors">
+            <span className="text-xs font-bold text-gray-400 dark:text-slate-500">تعداد کل کاربران</span>
+            <div className="text-3xl font-black text-blue-600 dark:text-blue-400">{stats.users_count}</div>
           </div>
-          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-1">
-            <span className="text-xs font-bold text-gray-400">تعداد کل اتاق‌ها</span>
-            <div className="text-3xl font-black text-indigo-600">{stats.rooms_count}</div>
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-1 transition-colors">
+            <span className="text-xs font-bold text-gray-400 dark:text-slate-500">تعداد کل اتاق‌ها</span>
+            <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400">{stats.rooms_count}</div>
           </div>
-          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-1">
-            <span className="text-xs font-bold text-gray-400">ضبط‌های ذخیره‌شده</span>
-            <div className="text-3xl font-black text-emerald-600">{stats.recordings_count}</div>
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-1 transition-colors">
+            <span className="text-xs font-bold text-gray-400 dark:text-slate-500">ضبط‌های ذخیره‌شده</span>
+            <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400">{stats.recordings_count}</div>
           </div>
-          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-1">
-            <span className="text-xs font-bold text-gray-400">مجموع فضای اشغال‌شده</span>
-            <div className="text-3xl font-black text-amber-600">{formatBytes(stats.total_storage_bytes)}</div>
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-1 transition-colors">
+            <span className="text-xs font-bold text-gray-400 dark:text-slate-500">مجموع فضای اشغال‌شده</span>
+            <div className="text-3xl font-black text-amber-600 dark:text-amber-400">{formatBytes(stats.total_storage_bytes)}</div>
           </div>
         </div>
       )}
 
       {/* تب‌های مدیریت */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="flex border-b border-gray-100 px-6 pt-4 gap-6 text-sm font-bold">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
+        <div className="flex border-b border-gray-100 dark:border-slate-800 px-6 pt-4 gap-6 text-sm font-bold">
           <button
             onClick={() => setActiveTab('users')}
             className={`pb-4 border-b-2 transition-all ${
-              activeTab === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+              activeTab === 'users' ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-slate-300'
             }`}
           >
             کاربران ({users.length})
@@ -94,7 +94,7 @@ export const AdminDashboardPage: React.FC = () => {
           <button
             onClick={() => setActiveTab('rooms')}
             className={`pb-4 border-b-2 transition-all ${
-              activeTab === 'rooms' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+              activeTab === 'rooms' ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-slate-300'
             }`}
           >
             اتاق‌ها ({rooms.length})
@@ -102,7 +102,7 @@ export const AdminDashboardPage: React.FC = () => {
           <button
             onClick={() => setActiveTab('logs')}
             className={`pb-4 border-b-2 transition-all ${
-              activeTab === 'logs' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+              activeTab === 'logs' ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-slate-300'
             }`}
           >
             لاگ‌های ممیزی و امنیت ({logs.length})
@@ -113,7 +113,7 @@ export const AdminDashboardPage: React.FC = () => {
           {activeTab === 'users' && (
             <table className="w-full text-right border-collapse text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs font-bold text-gray-400">
+                <tr className="border-b border-gray-100 dark:border-slate-800 text-xs font-bold text-gray-400 dark:text-slate-500">
                   <th className="pb-3 px-3">شناسه</th>
                   <th className="pb-3 px-3">نام کاربری</th>
                   <th className="pb-3 px-3">نام نمایشی</th>
@@ -124,29 +124,29 @@ export const AdminDashboardPage: React.FC = () => {
                   <th className="pb-3 px-3 text-center">عملیات</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-50 dark:divide-slate-800/60">
                 {users.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50/50">
-                    <td className="py-3 px-3 text-xs text-gray-400 font-mono">{u.id}</td>
-                    <td className="py-3 px-3 font-bold text-gray-800" dir="ltr">
+                  <tr key={u.id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/40">
+                    <td className="py-3 px-3 text-xs text-gray-400 dark:text-slate-500 font-mono">{u.id}</td>
+                    <td className="py-3 px-3 font-bold text-gray-800 dark:text-slate-200" dir="ltr">
                       {u.username}
                     </td>
-                    <td className="py-3 px-3 text-gray-600">{u.account_name || '—'}</td>
+                    <td className="py-3 px-3 text-gray-600 dark:text-slate-400">{u.account_name || '—'}</td>
                     <td className="py-3 px-3">
                       <span
                         className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                          u.role === 'admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                          u.role === 'admin' ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300'
                         }`}
                       >
                         {u.role === 'admin' ? 'مدیر' : 'کاربر'}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-xs font-bold">{u.rooms_count}</td>
-                    <td className="py-3 px-3 text-xs text-gray-500">{formatBytes(u.storage_used_bytes)}</td>
+                    <td className="py-3 px-3 text-xs font-bold dark:text-slate-200">{u.rooms_count}</td>
+                    <td className="py-3 px-3 text-xs text-gray-500 dark:text-slate-400">{formatBytes(u.storage_used_bytes)}</td>
                     <td className="py-3 px-3">
                       <span
                         className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                          u.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                          u.is_active ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300'
                         }`}
                       >
                         {u.is_active ? 'فعال' : 'مسدود'}
@@ -156,7 +156,7 @@ export const AdminDashboardPage: React.FC = () => {
                       <button
                         onClick={() => handleToggleUser(u.id)}
                         className={`text-xs font-bold px-2 py-1 rounded-lg ${
-                          u.is_active ? 'text-red-600 hover:bg-red-50' : 'text-emerald-600 hover:bg-emerald-50'
+                          u.is_active ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40' : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                         }`}
                       >
                         {u.is_active ? 'مسدودسازی' : 'فعال‌سازی'}
@@ -171,7 +171,7 @@ export const AdminDashboardPage: React.FC = () => {
           {activeTab === 'rooms' && (
             <table className="w-full text-right border-collapse text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs font-bold text-gray-400">
+                <tr className="border-b border-gray-100 dark:border-slate-800 text-xs font-bold text-gray-400 dark:text-slate-500">
                   <th className="pb-3 px-3">شناسه</th>
                   <th className="pb-3 px-3">نام اتاق</th>
                   <th className="pb-3 px-3">مالک</th>
@@ -180,17 +180,17 @@ export const AdminDashboardPage: React.FC = () => {
                   <th className="pb-3 px-3">فضای اشغال‌شده</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-50 dark:divide-slate-800/60">
                 {rooms.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50/50">
-                    <td className="py-3 px-3 text-xs text-gray-400 font-mono">{r.id}</td>
-                    <td className="py-3 px-3 font-bold text-gray-800">{r.name}</td>
-                    <td className="py-3 px-3 text-gray-600" dir="ltr">
+                  <tr key={r.id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/40">
+                    <td className="py-3 px-3 text-xs text-gray-400 dark:text-slate-500 font-mono">{r.id}</td>
+                    <td className="py-3 px-3 font-bold text-gray-800 dark:text-slate-200">{r.name}</td>
+                    <td className="py-3 px-3 text-gray-600 dark:text-slate-400" dir="ltr">
                       {r.owner_username}
                     </td>
-                    <td className="py-3 px-3 text-xs font-bold">{r.capacity} نفر</td>
-                    <td className="py-3 px-3 text-xs text-gray-500">{r.speakers_count}</td>
-                    <td className="py-3 px-3 text-xs text-gray-500">{formatBytes(r.storage_used_bytes)}</td>
+                    <td className="py-3 px-3 text-xs font-bold dark:text-slate-200">{r.capacity} نفر</td>
+                    <td className="py-3 px-3 text-xs text-gray-500 dark:text-slate-400">{r.speakers_count}</td>
+                    <td className="py-3 px-3 text-xs text-gray-500 dark:text-slate-400">{formatBytes(r.storage_used_bytes)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -200,7 +200,7 @@ export const AdminDashboardPage: React.FC = () => {
           {activeTab === 'logs' && (
             <table className="w-full text-right border-collapse text-xs">
               <thead>
-                <tr className="border-b border-gray-100 font-bold text-gray-400">
+                <tr className="border-b border-gray-100 dark:border-slate-800 font-bold text-gray-400 dark:text-slate-500">
                   <th className="pb-3 px-3">زمان</th>
                   <th className="pb-3 px-3">سطح</th>
                   <th className="pb-3 px-3">اقدام</th>
@@ -209,27 +209,27 @@ export const AdminDashboardPage: React.FC = () => {
                   <th className="pb-3 px-3">جزئیات</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50 font-mono">
+              <tbody className="divide-y divide-gray-50 dark:divide-slate-800/60 font-mono">
                 {logs.map((l) => (
-                  <tr key={l.id} className="hover:bg-gray-50/50">
-                    <td className="py-2.5 px-3 text-gray-500 whitespace-nowrap">{formatDate(l.created_at_ms)}</td>
+                  <tr key={l.id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/40">
+                    <td className="py-2.5 px-3 text-gray-500 dark:text-slate-400 whitespace-nowrap">{formatDate(l.created_at_ms)}</td>
                     <td className="py-2.5 px-3">
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                           l.severity === 'warning'
-                            ? 'bg-amber-50 text-amber-700'
+                            ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300'
                             : l.severity === 'error'
-                            ? 'bg-red-50 text-red-700'
-                            : 'bg-blue-50 text-blue-700'
+                            ? 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300'
+                            : 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
                         }`}
                       >
                         {l.severity}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 font-bold text-gray-800">{l.action}</td>
-                    <td className="py-2.5 px-3 text-gray-600">{l.actor_username || 'سیستم'}</td>
-                    <td className="py-2.5 px-3 text-gray-400">{l.ip || '—'}</td>
-                    <td className="py-2.5 px-3 text-gray-500 truncate max-w-xs">{l.detail}</td>
+                    <td className="py-2.5 px-3 font-bold text-gray-800 dark:text-slate-200">{l.action}</td>
+                    <td className="py-2.5 px-3 text-gray-600 dark:text-slate-400">{l.actor_username || 'سیستم'}</td>
+                    <td className="py-2.5 px-3 text-gray-400 dark:text-slate-500">{l.ip || '—'}</td>
+                    <td className="py-2.5 px-3 text-gray-500 dark:text-slate-400 truncate max-w-xs">{l.detail}</td>
                   </tr>
                 ))}
               </tbody>

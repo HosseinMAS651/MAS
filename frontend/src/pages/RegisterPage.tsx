@@ -36,18 +36,18 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-gradient-to-b from-blue-50/50 to-white">
-      <div className="max-w-lg w-full bg-white rounded-3xl shadow-xl shadow-blue-900/5 border border-gray-100 p-8 space-y-6">
+    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-gradient-to-b from-blue-50/50 to-white dark:from-slate-950 dark:to-slate-900 transition-colors">
+      <div className="max-w-lg w-full bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-blue-900/5 dark:shadow-black/40 border border-gray-100 dark:border-slate-800 p-8 space-y-6 transition-colors">
         <div className="text-center space-y-2">
           <div className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center text-2xl font-black mx-auto shadow-lg shadow-blue-600/30">
             مـاس
           </div>
-          <h2 className="text-2xl font-black text-gray-900">ساخت حساب کاربری جدید</h2>
-          <p className="text-sm text-gray-500">برای شروع مدیریت زمان‌بندی سخنرانی‌ها ثبت‌نام کنید</p>
+          <h2 className="text-2xl font-black text-gray-900 dark:text-white">ساخت حساب کاربری جدید</h2>
+          <p className="text-sm text-gray-500 dark:text-slate-400">برای شروع مدیریت زمان‌بندی سخنرانی‌ها ثبت‌نام کنید</p>
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm font-medium rounded-2xl">
+          <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm font-medium rounded-2xl">
             {error}
           </div>
         )}
@@ -55,7 +55,7 @@ export const RegisterPage: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">
                 نام کاربری <span className="text-red-500">*</span>
               </label>
               <input
@@ -63,13 +63,13 @@ export const RegisterPage: React.FC = () => {
                 required
                 value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                 placeholder="حداقل ۳ کاراکتر"
                 dir="ltr"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">
                 رمز عبور <span className="text-red-500">*</span>
               </label>
               <input
@@ -77,7 +77,7 @@ export const RegisterPage: React.FC = () => {
                 required
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                 placeholder="حداقل ۸ کاراکتر"
                 dir="ltr"
               />
@@ -86,22 +86,22 @@ export const RegisterPage: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">نام و نام خانوادگی</label>
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">نام و نام خانوادگی</label>
               <input
                 type="text"
                 value={form.account_name}
                 onChange={(e) => setForm({ ...form, account_name: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                 placeholder="مثال: علی رضایی"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">شغل یا سمت</label>
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">شغل یا سمت</label>
               <input
                 type="text"
                 value={form.job}
                 onChange={(e) => setForm({ ...form, job: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                 placeholder="مثال: دبیر همایش"
               />
             </div>
@@ -109,22 +109,22 @@ export const RegisterPage: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">تقویم نمایشی</label>
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">تقویم نمایشی</label>
               <select
                 value={form.calendar}
                 onChange={(e) => setForm({ ...form, calendar: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm font-medium"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm font-medium"
               >
                 <option value="jalali">هجری شمسی (ایران)</option>
                 <option value="gregorian">میلادی (Gregorian)</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">منطقه زمانی</label>
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">منطقه زمانی</label>
               <select
                 value={form.timezone}
                 onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm font-medium"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm font-medium"
                 dir="ltr"
               >
                 <option value="Asia/Tehran">Asia/Tehran (+03:30)</option>
@@ -145,9 +145,9 @@ export const RegisterPage: React.FC = () => {
           </button>
         </form>
 
-        <p className="text-center text-xs text-gray-500">
+        <p className="text-center text-xs text-gray-500 dark:text-slate-400">
           قبلاً حساب ساخته‌اید؟{' '}
-          <Link to="/login" className="text-blue-600 font-bold hover:underline">
+          <Link to="/login" className="text-blue-600 dark:text-blue-400 font-bold hover:underline">
             ورود به حساب
           </Link>
         </p>

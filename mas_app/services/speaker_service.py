@@ -116,6 +116,12 @@ class SpeakerService:
                 speaker.timer.version += 1
 
         session.flush()
+
+        # در صورت فعال بودن ترتیب الفبایی یا سنی، ترتیب به‌روزرسانی شود
+        if room.order_mode in ("alpha", "age"):
+            from .room_service import RoomService
+            RoomService.apply_room_speaker_order(session, room)
+
         return speaker
 
     @staticmethod

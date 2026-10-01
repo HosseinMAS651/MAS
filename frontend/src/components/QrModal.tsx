@@ -42,18 +42,18 @@ export const QrModal: React.FC<QrModalProps> = ({ isOpen, onClose, roomName, pub
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="لینک تماشاگران و کیوآرکد (QR Code)">
       <div className="space-y-5 text-center">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-gray-600 dark:text-slate-300">
           تماشاگران می‌توانند با اسکن این کیوآرکد یا باز کردن لینک زیر، بدون نیاز به ثبت‌نام و ورود،
           روند سخنرانی، زمان‌بندی و فایل‌های زندهٔ اتاق «{roomName}» را به صورت لحظه‌ای مشاهده کنند.
         </p>
 
         {qrDataUrl && (
-          <div className="flex flex-col items-center justify-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-            <img src={qrDataUrl} alt="QR Code" className="w-56 h-56 rounded-xl shadow-md" />
+          <div className="flex flex-col items-center justify-center p-4 bg-gray-50 dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700">
+            <img src={qrDataUrl} alt="QR Code" className="w-56 h-56 rounded-xl shadow-md bg-white p-2" />
             <a
               href={qrDataUrl}
               download={`qr-${roomName}.png`}
-              className="mt-3 text-xs text-blue-600 hover:text-blue-800 font-medium"
+              className="mt-3 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
             >
               ⬇ دریافت تصویر کیوآرکد (PNG)
             </a>
@@ -61,14 +61,14 @@ export const QrModal: React.FC<QrModalProps> = ({ isOpen, onClose, roomName, pub
         )}
 
         <div className="space-y-2">
-          <label className="text-xs font-bold text-gray-500 block text-right">آدرس مستقیم تماشاگر:</label>
+          <label className="text-xs font-bold text-gray-500 dark:text-slate-400 block text-right">آدرس مستقیم تماشاگر:</label>
           <div className="flex items-center gap-2">
             <input
               type="text"
               readOnly
               value={publicUrl}
               dir="ltr"
-              className="flex-1 px-3 py-2 text-xs bg-gray-100 border border-gray-200 rounded-xl font-mono text-gray-700 select-all"
+              className="flex-1 px-3 py-2 text-xs bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl font-mono text-gray-700 dark:text-slate-200 select-all"
             />
             <button
               onClick={handleCopy}
@@ -88,7 +88,7 @@ export const QrModal: React.FC<QrModalProps> = ({ isOpen, onClose, roomName, pub
             href={publicUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-block text-sm text-blue-600 hover:text-blue-800 font-bold"
+            className="inline-block text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold"
           >
             مشاهده صفحه تماشاگر در برگه جدید ↗
           </a>

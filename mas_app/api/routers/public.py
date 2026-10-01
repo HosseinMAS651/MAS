@@ -107,10 +107,11 @@ def get_public_state(
 
     live_files = []
     if room.live_files_enabled:
+        current_sp_id = snapshot.get("current_speaker_id")
         live_files = [
             FileResponse.model_validate(f)
             for f in room.files
-            if f.upload_type in ["common", "speaker"]
+            if f.upload_type == "common" or (f.upload_type == "speaker" and current_sp_id is not None and f.speaker_id == current_sp_id)
         ]
 
     public_state = PublicRoomStateResponse(
@@ -197,3 +198,65 @@ def get_public_qr(
     public_url = f"{base_url}/public/{room.public_token}"
     svg_data = room_service.generate_qr_svg(public_url)
     return Response(content=svg_data, media_type="image/svg+xml")
+
+
+@router.post("/reactions")
+def send_reaction(
+    token: str,
+    payload: dict,
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+    client_ip: Annotated[str, Depends(get_client_ip)],
+) -> dict:
+    """ثبت واکنش آنلاین تماشاگر (Instagram Live style)."""
+    room = room_service.get_room_by_public_token(session, token)
+    from ...services.reaction_service import reaction_manager
+    if not reaction_manager.is_enabled(room.id):
+        raise ForbiddenError("ارسال واکنش برای این جلسه موقتاً غیرفعال است.")
+
+    emoji = str(payload.get("emoji", "heart")).strip()
+    item = reaction_manager.add_reaction(room.id, emoji)
+    return {"ok": True, "reaction": item}
+
+
+@router.get("/reactions")
+def get_recent_reactions(
+    token: str,
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+) -> dict:
+    """دریافت واکنش‌های ثانیه‌های اخیر جهت انیمیشن شناور در نمای تماشاگر."""
+    room = room_service.get_room_by_public_token(session, token)
+    from ...services.reaction_service import reaction_manager
+    items = reaction_manager.get_recent(room.id, since_seconds=3.0)
+    return {
+        "ok": True,
+        "reactions_enabled": reaction_manager.is_enabled(room.id),
+        "reactions": items,
+        "totals": reaction_manager.get_totals(room.id),
+    }
+
+
+@router.get("/report/pdf")
+def download_public_report_pdf(
+    token: str,
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+) -> Response:
+    """دانلود نسخه PDF گزارش اتاق از دیدگاه تماشاگر."""
+    room = room_service.get_room_by_public_token(session, token)
+    from ...services.pdf_report_service import PdfReportService
+    from ...services.reaction_service import reaction_manager
+    totals = reaction_manager.get_totals(room.id)
+    pdf_bytes = PdfReportService.generate_room_report(room, [], totals)
+
+    filename = f"report-room-{room.id}.pdf"
+    quoted = urllib.parse.quote(filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted}",
+            "Cache-Control": "no-cache",
+        },
+    )
