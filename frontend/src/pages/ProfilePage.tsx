@@ -63,26 +63,26 @@ export const ProfilePage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
-      <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+      <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-4 transition-colors">
         <div>
-          <h1 className="text-2xl font-black text-gray-900">پروفایل کاربری</h1>
-          <p className="text-sm text-gray-500 mt-1">مشاهده و ویرایش مشخصات حساب کاربری و تنظیمات سامانه</p>
+          <h1 className="text-2xl font-black text-gray-900 dark:text-white">پروفایل کاربری</h1>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">مشاهده و ویرایش مشخصات حساب کاربری و تنظیمات سامانه</p>
         </div>
-        <div className="text-left bg-blue-50 border border-blue-100 px-4 py-2 rounded-2xl">
-          <span className="text-xs text-blue-600 block font-bold">مصرف کل فضای شما:</span>
-          <span className="text-base font-black text-blue-900">{formatBytes(user.storage_used_bytes)}</span>
+        <div className="text-left bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900 px-4 py-2 rounded-2xl">
+          <span className="text-xs text-blue-600 dark:text-blue-400 block font-bold">مصرف کل فضای شما:</span>
+          <span className="text-base font-black text-blue-900 dark:text-blue-200">{formatBytes(user.storage_used_bytes)}</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* مشخصات کاربری */}
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
-          <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-3">اطلاعات فردی و منطقه زمانی</h2>
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-4 transition-colors">
+          <h2 className="text-lg font-bold text-gray-800 dark:text-slate-100 border-b border-gray-100 dark:border-slate-800 pb-3">اطلاعات فردی و منطقه زمانی</h2>
 
           {profileMsg.text && (
             <div
               className={`p-3 text-xs font-bold rounded-xl ${
-                profileMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                profileMsg.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
               }`}
             >
               {profileMsg.text}
@@ -91,65 +91,65 @@ export const ProfilePage: React.FC = () => {
 
           <form onSubmit={handleUpdateProfile} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">نام کاربری (غیرقابل تغییر)</label>
+              <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 mb-1">نام کاربری (غیرقابل تغییر)</label>
               <input
                 type="text"
                 disabled
                 value={user.username}
                 dir="ltr"
-                className="w-full px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 text-sm font-mono"
+                className="w-full px-4 py-2.5 bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-gray-500 dark:text-slate-400 text-sm font-mono"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">نام و نام خانوادگی</label>
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">نام و نام خانوادگی</label>
               <input
                 type="text"
                 value={accountName}
                 onChange={(e) => setAccountName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">سمت / شغل</label>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">سمت / شغل</label>
                 <input
                   type="text"
                   value={job}
                   onChange={(e) => setJob(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">سن</label>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">سن</label>
                 <input
                   type="number"
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">تقویم</label>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">تقویم</label>
                 <select
                   value={calendar}
                   onChange={(e) => setCalendar(e.target.value as any)}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-xs font-medium"
+                  className="w-full px-3 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-xs font-medium"
                 >
                   <option value="jalali">هجری شمسی</option>
                   <option value="gregorian">میلادی</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">منطقه زمانی</label>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">منطقه زمانی</label>
                 <select
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-xs font-medium"
+                  className="w-full px-3 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-xs font-medium"
                   dir="ltr"
                 >
                   <option value="Asia/Tehran">Asia/Tehran</option>
@@ -171,14 +171,14 @@ export const ProfilePage: React.FC = () => {
         </div>
 
         {/* تغییر رمز عبور */}
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4 flex flex-col justify-between">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-4 flex flex-col justify-between transition-colors">
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-3">امنیت و تغییر رمز عبور</h2>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-slate-100 border-b border-gray-100 dark:border-slate-800 pb-3">امنیت و تغییر رمز عبور</h2>
 
             {passwordMsg.text && (
               <div
                 className={`p-3 text-xs font-bold rounded-xl ${
-                  passwordMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                  passwordMsg.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
                 }`}
               >
                 {passwordMsg.text}
@@ -187,25 +187,25 @@ export const ProfilePage: React.FC = () => {
 
             <form onSubmit={handleChangePassword} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">رمز عبور فعلی</label>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">رمز عبور فعلی</label>
                 <input
                   type="password"
                   required
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                   dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">رمز عبور جدید</label>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">رمز عبور جدید</label>
                 <input
                   type="password"
                   required
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
                   placeholder="حداقل ۸ کاراکتر"
                   dir="ltr"
                 />
@@ -214,14 +214,14 @@ export const ProfilePage: React.FC = () => {
               <button
                 type="submit"
                 disabled={loadingPassword}
-                className="w-full py-2.5 bg-gray-800 hover:bg-black text-white font-bold rounded-xl shadow-md transition-all text-sm mt-4"
+                className="w-full py-2.5 bg-gray-800 dark:bg-slate-800 hover:bg-black dark:hover:bg-slate-700 text-white font-bold rounded-xl shadow-md transition-all text-sm mt-4 border border-transparent dark:border-slate-700"
               >
                 {loadingPassword ? 'در حال تغییر…' : 'تغییر رمز عبور'}
               </button>
             </form>
           </div>
 
-          <div className="pt-4 border-t border-gray-100 text-xs text-gray-400">
+          <div className="pt-4 border-t border-gray-100 dark:border-slate-800 text-xs text-gray-400 dark:text-slate-500">
             تاریخ عضویت: {formatDate(user.created_at_ms, user.calendar, user.timezone)}
           </div>
         </div>

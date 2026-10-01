@@ -26,44 +26,44 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-gradient-to-b from-blue-50/50 to-white">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl shadow-blue-900/5 border border-gray-100 p-8 space-y-6">
+    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-gradient-to-b from-blue-50/50 to-white dark:from-slate-950 dark:to-slate-900 transition-colors">
+      <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-blue-900/5 dark:shadow-black/40 border border-gray-100 dark:border-slate-800 p-8 space-y-6 transition-colors">
         <div className="text-center space-y-2">
           <div className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center text-2xl font-black mx-auto shadow-lg shadow-blue-600/30">
             مـاس
           </div>
-          <h2 className="text-2xl font-black text-gray-900">ورود به حساب کاربری</h2>
-          <p className="text-sm text-gray-500">برای مدیریت اتاق‌ها و زمان‌بندی سخنرانی وارد شوید</p>
+          <h2 className="text-2xl font-black text-gray-900 dark:text-white">ورود به حساب کاربری</h2>
+          <p className="text-sm text-gray-500 dark:text-slate-400">برای مدیریت اتاق‌ها و زمان‌بندی سخنرانی وارد شوید</p>
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm font-medium rounded-2xl animate-shake">
+          <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm font-medium rounded-2xl">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1.5">نام کاربری</label>
+            <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">نام کاربری</label>
             <input
               type="text"
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm transition-all"
+              className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm transition-all"
               placeholder="مثال: ali_rezaei"
               dir="ltr"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1.5">رمز عبور</label>
+            <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">رمز عبور</label>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm transition-all"
+              className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm transition-all"
               placeholder="••••••••"
               dir="ltr"
             />
@@ -78,9 +78,9 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
-        <p className="text-center text-xs text-gray-500">
+        <p className="text-center text-xs text-gray-500 dark:text-slate-400">
           حساب کاربری ندارید؟{' '}
-          <Link to="/register" className="text-blue-600 font-bold hover:underline">
+          <Link to="/register" className="text-blue-600 dark:text-blue-400 font-bold hover:underline">
             ثبت‌نام رایگان
           </Link>
         </p>

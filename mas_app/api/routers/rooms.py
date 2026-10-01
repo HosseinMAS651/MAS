@@ -301,3 +301,59 @@ async def download_file(
     }
     stream = storage.open_stream(file.storage_key)
     return StreamingResponse(stream, media_type=file.content_type, headers=headers)
+
+
+@router.get("/{room_id}/report/pdf")
+def download_room_report_pdf(
+    room_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+) -> Response:
+    """تولید و دانلود گزارش رسمی PDF رویداد به همراه لاگ‌ها و فایل‌ها."""
+    room = room_service.get_room_for_user(session, room_id, current_user)
+    from ...services.pdf_report_service import PdfReportService
+    from ...services.reaction_service import reaction_manager
+    from ...db.models import AuditLog
+
+    # دریافت لاگ‌های وقایع مربوط به این اتاق
+    logs = session.execute(
+        select(AuditLog)
+        .where(AuditLog.target_type == "room", AuditLog.target_id == str(room.id))
+        .order_by(AuditLog.id.desc())
+        .limit(30)
+    ).scalars().all()
+    events = [
+        {"action": log.action, "detail": log.detail, "created_at_ms": log.created_at_ms}
+        for log in logs
+    ]
+
+    totals = reaction_manager.get_totals(room.id)
+    pdf_bytes = PdfReportService.generate_room_report(room, events, totals)
+
+    filename = f"report-room-{room.id}.pdf"
+    quoted = urllib.parse.quote(filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted}",
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@router.post("/{room_id}/reactions/toggle")
+def toggle_reactions(
+    room_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+) -> dict:
+    """فعال یا غیرفعال کردن دریافت واکنش‌های آنلاین تماشاگران توسط مجری/مالک اتاق."""
+    room = room_service.get_room_for_user(session, room_id, current_user)
+    from ...services.reaction_service import reaction_manager
+    curr = reaction_manager.is_enabled(room.id)
+    new_state = not curr
+    reaction_manager.set_enabled(room.id, new_state)
+    return {"ok": True, "reactions_enabled": new_state}

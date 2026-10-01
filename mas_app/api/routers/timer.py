@@ -65,10 +65,11 @@ def _format_timer_state(room: Room, snapshot: dict) -> TimerStateResponse:
 
     live_files = []
     if room.live_files_enabled:
+        current_sp_id = snapshot.get("current_speaker_id")
         live_files = [
             FileResponse.model_validate(f)
             for f in room.files
-            if f.upload_type in ["common", "speaker"]
+            if f.upload_type == "common" or (f.upload_type == "speaker" and current_sp_id is not None and f.speaker_id == current_sp_id)
         ]
 
     return TimerStateResponse(

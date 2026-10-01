@@ -63,6 +63,36 @@ class _LimitedStream:
 
 
 class RoomService:
+
+    @staticmethod
+    def apply_room_speaker_order(session: Session, room: Room) -> None:
+        """مرتب‌سازی خودکار سخنرانان در صورت فعال بودن حالت‌های غیر دستی (alpha/age)."""
+        if room.order_mode not in ("alpha", "age"):
+            return
+
+        speakers = list(room.speakers)
+        if len(speakers) <= 1:
+            return
+
+        if room.order_mode == "alpha":
+            sorted_sp = sorted(
+                speakers,
+                key=lambda s: (0 if s.name.strip() else 1, s.name.strip().lower(), s.id)
+            )
+        else:  # age: بزرگ‌تر به کوچک‌تر
+            sorted_sp = sorted(
+                speakers,
+                key=lambda s: (0 if s.age is not None else 1, -(s.age or 0), s.name.strip().lower(), s.id)
+            )
+
+        for idx, sp in enumerate(sorted_sp):
+            sp.order_index = 100_000 + idx
+        session.flush()
+
+        for idx, sp in enumerate(sorted_sp):
+            sp.order_index = idx
+        session.flush()
+
     def __init__(
         self,
         settings: Settings,
@@ -369,6 +399,9 @@ class RoomService:
                 room.state.current_index = speakers_now.index(current)
             room.state.version += 1
             room.state.updated_at_ms = now_ms
+
+        # مرتب‌سازی خودکار در صورت تغییر حالت به غیر دستی
+        self.apply_room_speaker_order(session, room)
 
         room.updated_at_ms = now_ms
         room.version += 1
