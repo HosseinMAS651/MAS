@@ -43,8 +43,12 @@ async function request<T = any>(url: string, method = 'GET', body?: any, headers
     reqBody = JSON.stringify(body);
   }
 
+  const REQUEST_TIMEOUT_MS = 75000;
+
+  // Render Free services can cold-start for about a minute after idle time.
+  // Give the first request enough time instead of reporting a false network outage.
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 20000);
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { method: upper, headers: reqHeaders, body: reqBody, credentials: 'include', signal: controller.signal });
     if (response.status === 304) return { __notModified: true } as T;
@@ -58,9 +62,9 @@ async function request<T = any>(url: string, method = 'GET', body?: any, headers
     }
     return data as T;
   } catch (err: any) {
-    if (err?.name === 'AbortError') throw new ApiError('پاسخ سرور بیش از حد طول کشید. لطفاً دوباره تلاش کنید.', 'REQUEST_TIMEOUT', 408);
+    if (err?.name === 'AbortError') throw new ApiError('سرور بیش از حد معمول دیر پاسخ داد؛ اگر سرویس تازه بیدار شده است، چند ثانیه دیگر دوباره تلاش کنید.', 'REQUEST_TIMEOUT', 408);
     if (err instanceof ApiError) throw err;
-    throw new ApiError('ارتباط با سرور برقرار نشد. اتصال اینترنت و وضعیت سرور را بررسی کنید.', 'NETWORK_ERROR', 0);
+    throw new ApiError('ارتباط با سرور برقرار نشد. اتصال اینترنت و وضعیت سرویس را بررسی کنید.', 'NETWORK_ERROR', 0);
   } finally {
     window.clearTimeout(timeout);
   }

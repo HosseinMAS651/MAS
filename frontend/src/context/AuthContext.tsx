@@ -20,19 +20,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authError, setAuthError] = useState('');
 
   const refreshUser = async () => {
+    const maxAttempts = 3;
     try {
       setAuthError('');
-      const data = await api.get('/api/auth/me');
-      if (data?.user) setUser(data.user);
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const data = await api.get('/api/auth/me');
+          if (data?.user) setUser(data.user);
+          return;
+        } catch (err: any) {
+          lastError = err;
+          // 401 is a real logout; do not retry it. Other failures can be caused by
+          // Render cold-starts or a brief database wake-up.
+          if (err?.status === 401) {
+            setUser(null);
+            setCsrfToken('');
+            setAuthError('');
+            return;
+          }
+          if (attempt < maxAttempts) {
+            await new Promise((resolve) => window.setTimeout(resolve, attempt * 2500));
+          }
+        }
+      }
+
+      throw lastError || new Error('ارتباط با سرور برقرار نشد.');
     } catch (err: any) {
       // Network/server outage is not the same thing as logout. Preserve current user state.
-      if (err?.status === 401) {
-        setUser(null);
-        setCsrfToken('');
-        setAuthError('');
-      } else {
-        setAuthError(err?.message || 'ارتباط با سرور برقرار نشد.');
-      }
+      setAuthError(err?.message || 'ارتباط با سرور برقرار نشد.');
     } finally {
       setLoading(false);
     }
