@@ -98,9 +98,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.resolved_storage_dir.mkdir(parents=True, exist_ok=True)
 
     # ۳. ورکر پس‌زمینه برای پاک‌سازی صف فایل‌ها و ضبط‌های متروکه
-    # مهم: SQLAlchemy این پروژه synchronous است. اجرای مستقیم آن داخل coroutine اصلی
-    # می‌تواند event loop را قفل کند (خصوصاً وقتی صف cleanup بزرگ یا DB کند باشد).
-    # کل چرخهٔ نگهداری را در یک worker thread اجرا می‌کنیم تا درخواست‌های HTTP مستقل بمانند.
     cleanup_task = None
     if settings.maintenance_enabled:
 
@@ -109,20 +106,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             async def _run() -> None:
                 with database.session() as s:
-                    await cleanup_svc.process_queue(
-                        s, limit=settings.cleanup_queue_batch
-                    )
+                    await cleanup_svc.process_queue(s, limit=settings.cleanup_queue_batch)
                     await cleanup_svc.clean_abandoned_recordings(s)
 
-            # این حلقهٔ async فقط داخل thread نگهداری اجرا می‌شود؛ event loop اصلی
-            # FastAPI هرگز برای عملیات synchronous دیتابیس متوقف نمی‌شود.
             asyncio.run(_run())
 
         async def _background_maintenance():
             while True:
                 try:
                     await asyncio.sleep(settings.maintenance_interval_seconds)
-                    logger.info("شروع چرخهٔ نگهداری پس‌زمینه")
                     started_at = asyncio.get_running_loop().time()
                     await asyncio.to_thread(_run_maintenance_cycle)
                     elapsed = asyncio.get_running_loop().time() - started_at
