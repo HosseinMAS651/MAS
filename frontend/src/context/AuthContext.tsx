@@ -32,8 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         } catch (err: any) {
           lastError = err;
-          // 401 is a real logout; do not retry it. Other failures can be caused by
-          // Render cold-starts or a brief database wake-up.
+          // 401 means the session is genuinely invalid; retry only transient errors.
           if (err?.status === 401) {
             setUser(null);
             setCsrfToken('');
@@ -48,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       throw lastError || new Error('ارتباط با سرور برقرار نشد.');
     } catch (err: any) {
-      // Network/server outage is not the same thing as logout. Preserve current user state.
+      // A transient server/network outage is not treated as logout.
       setAuthError(err?.message || 'ارتباط با سرور برقرار نشد.');
     } finally {
       setLoading(false);

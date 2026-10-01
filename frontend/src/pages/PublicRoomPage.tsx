@@ -33,7 +33,6 @@ export const PublicRoomPage: React.FC = () => {
 
   const etagRef = useRef<string>('');
   const statePollRunningRef = useRef(false);
-  const reactionsPollRunningRef = useRef(false);
 
   const fetchPublicState = async () => {
     if (!token || statePollRunningRef.current) return;
@@ -59,8 +58,7 @@ export const PublicRoomPage: React.FC = () => {
   };
 
   const pollReactions = async () => {
-    if (!token || reactionsPollRunningRef.current) return;
-    reactionsPollRunningRef.current = true;
+    if (!token) return;
     try {
       const res = await api.get(`/api/public/${token}/reactions`);
       if (res && res.ok) {
@@ -71,8 +69,6 @@ export const PublicRoomPage: React.FC = () => {
       }
     } catch {
       // نادیده گرفتن خطای دوره‌ای
-    } finally {
-      reactionsPollRunningRef.current = false;
     }
   };
 

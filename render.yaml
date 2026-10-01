@@ -13,6 +13,8 @@ services:
     envVars:
       - key: MAS_ENV
         value: production
+      - key: PYTHON_VERSION
+        value: "3.13.5"
       - key: MAS_COOKIE_SECURE
         value: "1"
       - key: MAS_SECRET_KEY
