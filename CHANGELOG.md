@@ -1,3 +1,9 @@
+## 2026-10-01 — Server responsiveness / maintenance worker
+
+- اجرای maintenance worker از event loop اصلی FastAPI خارج شد؛ عملیات synchronous دیتابیس اکنون در worker thread اجرا می‌شود.
+- برای شروع/پایان چرخهٔ maintenance لاگ زمان‌سنجی اضافه شد.
+- در صفحات تماشاگر و اپراتور، درخواست‌های polling هم‌پوشان مسدود می‌شوند تا در شرایط کندی شبکه صف درخواست‌ها رشد نکند.
+
 # تاریخچه تغییرات و نسخه‌ها (Changelog)
 
 ## [2.0.0] - 2026-09-22
