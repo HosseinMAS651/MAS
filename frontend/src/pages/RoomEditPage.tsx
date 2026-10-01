@@ -92,39 +92,39 @@ export const RoomEditPage: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-24 text-gray-400 font-bold">در حال بارگذاری فرم…</div>;
+    return <div className="text-center py-24 text-gray-400 dark:text-slate-500 font-bold">در حال بارگذاری فرم…</div>;
   }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-      <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+      <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-4 transition-colors">
         <div>
-          <h1 className="text-2xl font-black text-gray-900">تنظیمات و مشخصات اتاق</h1>
-          <p className="text-sm text-gray-500 mt-1">ویرایش پارامترهای زمان‌بندی، ظرفیت و امکانات پخش</p>
+          <h1 className="text-2xl font-black text-gray-900 dark:text-white">تنظیمات و مشخصات اتاق</h1>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">ویرایش پارامترهای زمان‌بندی، ظرفیت و امکانات پخش</p>
         </div>
-        <Link to={`/rooms/${id}`} className="text-xs font-bold text-blue-600 hover:underline">
+        <Link to={`/rooms/${id}`} className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">
           ← بازگشت به جزئیات اتاق
         </Link>
       </div>
 
-      {error && <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm font-medium rounded-2xl">{error}</div>}
-      {success && <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium rounded-2xl">{success}</div>}
+      {error && <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm font-medium rounded-2xl">{error}</div>}
+      {success && <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-sm font-medium rounded-2xl">{success}</div>}
 
-      <form onSubmit={(e) => handleSubmit(e, false)} className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+      <form onSubmit={(e) => handleSubmit(e, false)} className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-6 transition-colors">
         <div>
-          <label className="block text-xs font-bold text-gray-700 mb-1.5">نام اتاق</label>
+          <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">نام اتاق</label>
           <input
             type="text"
             required
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1.5">ظرفیت سخنرانان (نفر)</label>
+            <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">ظرفیت سخنرانان (نفر)</label>
             <input
               type="number"
               min={1}
@@ -132,30 +132,30 @@ export const RoomEditPage: React.FC = () => {
               required
               value={form.capacity}
               onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value, 10) || 1 })}
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
             />
-            <span className="text-[11px] text-gray-400 mt-1 block">حداقل ۱ و حداکثر ۱۰۰ نفر</span>
+            <span className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 block">حداقل ۱ و حداکثر ۱۰۰ نفر</span>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1.5">زمان پیش‌فرض سخنرانی (دقیقه)</label>
+            <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">زمان پیش‌فرض سخنرانی (دقیقه)</label>
             <input
               type="number"
               min={1}
               max={1440}
               value={Math.floor(form.global_seconds / 60)}
               onChange={(e) => setForm({ ...form, global_seconds: (parseInt(e.target.value, 10) || 5) * 60 })}
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-gray-700 mb-1.5">نحوه زمان‌بندی</label>
+          <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">نحوه زمان‌بندی</label>
           <select
             value={form.timing_mode}
             onChange={(e) => setForm({ ...form, timing_mode: e.target.value })}
-            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium"
+            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl text-sm font-medium"
           >
             <option value="global">زمان یکسان برای همهٔ سخنرانان (بر اساس زمان پیش‌فرض بالا)</option>
             <option value="individual">زمان مستقل و متغیر برای هر سخنران</option>
@@ -163,11 +163,11 @@ export const RoomEditPage: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-gray-700 mb-1.5">نحوه مرتب‌سازی سخنرانان</label>
+          <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">نحوه مرتب‌سازی سخنرانان</label>
           <select
             value={form.order_mode}
             onChange={(e) => setForm({ ...form, order_mode: e.target.value })}
-            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium"
+            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl text-sm font-medium"
           >
             <option value="manual">دستی (بر اساس ترتیبی که در جدول می‌چینید)</option>
             <option value="alpha">الفبایی (بر اساس نام خانوادگی/نام)</option>
@@ -176,17 +176,17 @@ export const RoomEditPage: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-gray-700 mb-1.5">توضیحات و یادداشت‌های اتاق</label>
+          <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5">توضیحات و یادداشت‌های اتاق</label>
           <textarea
             rows={3}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+            className="w-full px-4 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
           />
         </div>
 
-        <div className="space-y-3 pt-4 border-t border-gray-100">
-          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-gray-800">
+        <div className="space-y-3 pt-4 border-t border-gray-100 dark:border-slate-800">
+          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-gray-800 dark:text-slate-200">
             <input
               type="checkbox"
               checked={form.recording_enabled}
@@ -196,7 +196,7 @@ export const RoomEditPage: React.FC = () => {
             فعال بودن ضبط خودکار صدا در زمان حرکت تایمر
           </label>
 
-          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-gray-800">
+          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-gray-800 dark:text-slate-200">
             <input
               type="checkbox"
               checked={form.live_files_enabled}
@@ -206,7 +206,7 @@ export const RoomEditPage: React.FC = () => {
             امکان نمایش فایل‌های زنده برای تماشاگران
           </label>
 
-          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-gray-800">
+          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-gray-800 dark:text-slate-200">
             <input
               type="checkbox"
               checked={form.public_enabled}
@@ -217,11 +217,11 @@ export const RoomEditPage: React.FC = () => {
           </label>
         </div>
 
-        <div className="flex justify-between items-center pt-6 border-t border-gray-100">
+        <div className="flex justify-between items-center pt-6 border-t border-gray-100 dark:border-slate-800">
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
-            className="px-4 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+            className="px-4 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl transition-colors"
           >
             حذف کامل این اتاق…
           </button>
@@ -229,7 +229,7 @@ export const RoomEditPage: React.FC = () => {
           <div className="flex gap-3">
             <Link
               to={`/rooms/${id}`}
-              className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors"
+              className="px-5 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm font-bold text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
             >
               انصراف
             </Link>
