@@ -8,6 +8,7 @@ import { OvertimeModal } from '../components/OvertimeModal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Modal } from '../components/Modal';
 import { QrModal } from '../components/QrModal';
+import { alertManager } from '../utils/alerts';
 
 export const PlayPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +35,7 @@ export const PlayPage: React.FC = () => {
   // دیالوگ‌های کنترلی
   const [showOvertimeModal, setShowOvertimeModal] = useState<boolean>(false);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [reactionsEnabled, setReactionsEnabled] = useState<boolean>(true);
 
   // پرسش ذخیره در زمان حذف سخنران در حین ضبط فعال (درخواست کاربر)
   const [deletingSpeakerPrompt, setDeletingSpeakerPrompt] = useState<{
@@ -182,9 +184,10 @@ export const PlayPage: React.FC = () => {
       if (res && res.state) {
         setState(res.state);
 
-        // شرط کاربر: اگر زمان به اتمام رسید و در انتظار تصمیم بود، اعلان نمایش داده شود
+        // شرط کاربر: اگر زمان به اتمام رسید و در انتظار تصمیم بود، اعلان صوتی و تصویری نمایش داده شود
         if (res.state.awaiting_decision && !res.state.running) {
           setShowOvertimeModal(true);
+          alertManager.playTimeUpBeep();
           handlePauseRecording();
         }
 
@@ -301,6 +304,16 @@ export const PlayPage: React.FC = () => {
     }
   };
 
+
+  const handleToggleReactions = async () => {
+    try {
+      const res = await api.post(`/api/rooms/${id}/reactions/toggle`);
+      setReactionsEnabled(res.reactions_enabled);
+    } catch (err: any) {
+      alert(err.message || 'خطا در تغییر وضعیت واکنش‌ها.');
+    }
+  };
+
   // حذف سخنران در صفحه پخش با بررسی ضبط فعال (درخواست کاربر)
   const attemptDeleteSpeaker = async (sp: Speaker) => {
     // اگر سخنران دارای ضبط فعال باشد، از کاربر سؤال می‌شود
@@ -369,6 +382,31 @@ export const PlayPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* دانلود گزارش رسمی PDF رویداد */}
+          <a
+            href={`/api/rooms/${id}/report/pdf`}
+            download
+            className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+          >
+            <span>📊</span>
+            گزارش PDF
+          </a>
+
+          {/* کلید کنترل واکنش‌های زنده تماشاگران */}
+          <button
+            type="button"
+            onClick={handleToggleReactions}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+              reactionsEnabled
+                ? 'bg-purple-600/20 border-purple-500/30 text-purple-300 hover:bg-purple-600/30'
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+            }`}
+            title="فعال/غیرفعال کردن ارسال واکنش‌های شناور توسط تماشاگران"
+          >
+            <span>💬</span>
+            واکنش‌ها: {reactionsEnabled ? 'روشن' : 'خاموش'}
+          </button>
+
           {/* نشانگر وضعیت ضبط (۳ حالت خواسته شده: در حال ضبط / متوقف / ذخیره) */}
           {recordingEnabled && (
             <div className="flex items-center gap-2 px-3 py-1 bg-slate-900 border border-slate-800 rounded-xl text-xs">

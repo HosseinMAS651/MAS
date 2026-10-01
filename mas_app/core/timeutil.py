@@ -106,3 +106,11 @@ def bound_int(value: object, *, minimum: int, maximum: int, default: int | None 
     # محافظت در برابر سرریز در درایور دیتابیس (باگ BE-12: OverflowError → ۵۰۰)
     number = max(-9_223_372_036_854_775_808, min(9_223_372_036_854_775_807, number))
     return max(minimum, min(maximum, number))
+
+
+def format_datetime_persian(ms: int | None) -> str:
+    """تبدیل epoch میلی‌ثانیه به تاریخ و زمان استاندارد برای نمایش در گزارش‌ها."""
+    if not ms or ms <= 0:
+        return "—"
+    dt = datetime.fromtimestamp(ms / 1000, tz=UTC)
+    return dt.strftime("%Y-%m-%d %H:%M UTC")

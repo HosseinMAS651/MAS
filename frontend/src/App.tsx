@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Navbar } from './components/Navbar';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -20,7 +21,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400 font-bold">
+      <div className="min-h-screen flex items-center justify-center text-gray-400 font-bold dark:bg-slate-950 dark:text-slate-500">
         در حال بررسی دسترسی…
       </div>
     );
@@ -29,10 +30,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
   if (!user) {
     if (authError) {
       return (
-        <div className="min-h-screen flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-2xl border bg-white p-6 text-center shadow-sm">
-            <h2 className="text-lg font-black text-gray-900">ارتباط با سرور برقرار نشد</h2>
-            <p className="mt-2 text-sm text-gray-500">{authError}</p>
+        <div className="min-h-screen flex items-center justify-center p-6 dark:bg-slate-950">
+          <div className="max-w-md w-full rounded-2xl border bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800 p-6 text-center shadow-sm">
+            <h2 className="text-lg font-black text-gray-900 dark:text-white">ارتباط با سرور برقرار نشد</h2>
+            <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">{authError}</p>
             <button onClick={() => void refreshUser()} className="mt-5 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white">تلاش دوباره</button>
           </div>
         </div>
@@ -50,9 +51,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
 
 export const AppContent: React.FC = () => {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50/50">
+    <div className="min-h-screen flex flex-col bg-gray-50/50 dark:bg-slate-950 transition-colors">
       <Routes>
-        {/* مسیر تماشاگر عمومی نیازی به Navbar ندارد */}
+        {/* مسیر تماشاگر عمومی */}
         <Route path="/public/:token" element={<PublicRoomPage />} />
 
         {/* سایر مسیرها با Navbar اختصاصی */}
@@ -135,9 +136,11 @@ export const AppContent: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 };
