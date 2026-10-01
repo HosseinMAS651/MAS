@@ -44,6 +44,7 @@ export const PlayPage: React.FC = () => {
   } | null>(null);
 
   const etagRef = useRef<string>('');
+  const timerPollRunningRef = useRef(false);
   const animFrameRef = useRef<number | null>(null);
   const animationBaseRef = useRef({ startedAt: 0, elapsed: 0, overtime: 0, running: false, awaiting: false });
 
@@ -174,6 +175,8 @@ export const PlayPage: React.FC = () => {
 
   // درخواست دریافت وضعیت تایمر با بهینه‌سازی ETag
   const pollTimerState = useCallback(async () => {
+    if (timerPollRunningRef.current) return;
+    timerPollRunningRef.current = true;
     try {
       const headers: Record<string, string> = {};
       if (etagRef.current) {
@@ -212,6 +215,7 @@ export const PlayPage: React.FC = () => {
       console.warn('خطا در دریافت وضعیت تایمر:', err);
     } finally {
       setLoading(false);
+      timerPollRunningRef.current = false;
     }
   }, [id, recState, recordingEnabled, handleStartRecording, handlePauseRecording, stopBrowserRecorder]);
 

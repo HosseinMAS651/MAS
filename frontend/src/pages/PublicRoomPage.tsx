@@ -32,9 +32,12 @@ export const PublicRoomPage: React.FC = () => {
   const [sendingReaction, setSendingReaction] = useState<boolean>(false);
 
   const etagRef = useRef<string>('');
+  const statePollRunningRef = useRef(false);
+  const reactionsPollRunningRef = useRef(false);
 
   const fetchPublicState = async () => {
-    if (!token) return;
+    if (!token || statePollRunningRef.current) return;
+    statePollRunningRef.current = true;
     try {
       const headers: Record<string, string> = {};
       if (etagRef.current) {
@@ -51,11 +54,13 @@ export const PublicRoomPage: React.FC = () => {
       }
     } finally {
       setLoading(false);
+      statePollRunningRef.current = false;
     }
   };
 
   const pollReactions = async () => {
-    if (!token) return;
+    if (!token || reactionsPollRunningRef.current) return;
+    reactionsPollRunningRef.current = true;
     try {
       const res = await api.get(`/api/public/${token}/reactions`);
       if (res && res.ok) {
@@ -66,6 +71,8 @@ export const PublicRoomPage: React.FC = () => {
       }
     } catch {
       // نادیده گرفتن خطای دوره‌ای
+    } finally {
+      reactionsPollRunningRef.current = false;
     }
   };
 
