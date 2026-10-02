@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from ...core.errors import ForbiddenError, NotFoundError
 from ...services.rate_limiter import RateLimiter
 from ..deps import get_client_ip
-from ...db.models import SpeechFile
+from ...db.models import RoomState, SpeechFile
 from ...schemas.file import FileResponse
 from ...schemas.public import PublicRoomStateResponse
 from ...schemas.speaker import SpeakerResponse
@@ -142,15 +142,11 @@ async def get_public_file(
     storage: Annotated[object, Depends(get_storage_backend)],
     client_ip: Annotated[str, Depends(get_client_ip)],
 ) -> Response:
-    """Serve a public live file safely and efficiently.
-
-    Local storage uses Starlette's FileResponse so browsers can issue Range/HEAD
-    requests for PDF/audio/video content. Missing or stale physical files are
-    reported as a normal 404 instead of falling through to the global 500 handler.
-    """
+    """ارائهٔ فایل زنده به تماشاگر، با پشتیبانی درست از مرورگر و فایل اختصاصی سخنران."""
     room = room_service.get_room_by_public_token(session, token)
     if not room.live_files_enabled:
         raise ForbiddenError("نمایش فایل‌های زنده در این اتاق مجاز نیست.")
+
     RateLimiter.check_and_increment(
         session,
         f"public:ip:{client_ip}",
@@ -169,46 +165,46 @@ async def get_public_file(
     if not file:
         raise NotFoundError("فایل مورد نظر یافت نشد.")
 
+    # فایل اختصاصی فقط وقتی عمومی است که همان سخنران در حال اجرا باشد.
+    if file.upload_type == "speaker":
+        current_speaker_id = session.execute(
+            select(RoomState.current_speaker_id).where(RoomState.room_id == room.id)
+        ).scalar_one_or_none()
+        if current_speaker_id != file.speaker_id:
+            raise NotFoundError("فایل مورد نظر در حال حاضر برای تماشاگران قابل نمایش نیست.")
+
     presigned = storage.get_presigned_download_url(file.storage_key, file.filename)
     if presigned:
         from fastapi.responses import RedirectResponse
 
-        response = RedirectResponse(presigned, status_code=303)
-        response.headers["Cache-Control"] = "private, no-store"
-        return response
+        return RedirectResponse(presigned, status_code=303)
 
     quoted_filename = urllib.parse.quote(file.filename)
     headers = {
         "Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}",
-        "Cache-Control": "private, max-age=60, must-revalidate",
+        "Cache-Control": "no-store, max-age=0",
         "Accept-Ranges": "bytes",
-        "X-Content-Type-Options": "nosniff",
-        # Public live files are embedded by the same-origin spectator page.
-        "X-Frame-Options": "SAMEORIGIN",
     }
 
-    local_path = getattr(storage, "get_file_path", lambda _key: None)(file.storage_key)
+    # LocalStorage را مستقیماً با FileResponse سرو می‌کنیم تا FastAPI/Starlette
+    # وجود فایل، Content-Length و رفتار مرورگر برای فایل‌های PDF/تصویر/رسانه را
+    # درست مدیریت کند. این مسیر همچنین خطای خام FileNotFoundError را به ۵۰۰ تبدیل نمی‌کند.
+    local_path = storage.get_local_path(file.storage_key)
     if local_path is not None:
+        if not local_path.is_file():
+            raise NotFoundError("فایل روی سرور یافت نشد؛ ممکن است فایل فیزیکی حذف شده باشد.")
         return FastAPIFileResponse(
             path=str(local_path),
-            media_type=file.content_type or "application/octet-stream",
-            filename=file.filename,
-            content_disposition_type="inline",
+            media_type=file.content_type,
             headers=headers,
         )
 
+    # پشتیبان برای storage backendهایی که local path ندارند.
     try:
         stream = storage.open_stream(file.storage_key)
     except FileNotFoundError as exc:
-        raise NotFoundError("فایل روی فضای ذخیره‌سازی یافت نشد. لطفاً فایل را دوباره بارگذاری کنید.") from exc
-    except (OSError, ValueError) as exc:
-        raise NotFoundError("دسترسی به فایل ذخیره‌شده امکان‌پذیر نیست. لطفاً فایل را دوباره بارگذاری کنید.") from exc
-
-    return StreamingResponse(
-        stream,
-        media_type=file.content_type or "application/octet-stream",
-        headers={**headers, "Content-Length": str(file.size_bytes)},
-    )
+        raise NotFoundError("فایل روی سرور یافت نشد.") from exc
+    return StreamingResponse(stream, media_type=file.content_type, headers=headers)
 
 
 @router.get("/qr")
