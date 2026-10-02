@@ -38,6 +38,11 @@ logger = logging.getLogger("mas")
 FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
+def path_is_public_file(path: str) -> bool:
+    parts = path.strip("/").split("/")
+    return len(parts) == 5 and parts[0] == "api" and parts[1] == "public" and parts[3] == "files"
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """افزودن هدرهای امنیتی به کلیهٔ پاسخ‌های سرور."""
 
@@ -49,14 +54,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)  # type: ignore[misc]
 
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # پیش‌نمایش فایل‌های عمومی داخل همان صفحهٔ تماشاگر به iframe نیاز دارد.
+        # تنها همین endpoint با SAMEORIGIN مجاز به frame شدن است؛ سایر صفحات همچنان DENY هستند.
+        public_file_frame = path_is_public_file(request.url.path)
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if public_file_frame else "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "microphone=(self), camera=(), geolocation=()"
 
         # سیاست محتوای امن (CSP)
-        path = request.url.path
-        is_public_file = path.startswith("/api/public/") and "/files/" in path
+        frame_ancestors = "'self'" if public_file_frame else "'none'"
         csp = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
@@ -65,13 +72,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "media-src 'self' blob: https:; "
             "connect-src 'self' blob: https:; "
             "font-src 'self' data:; "
-            f"frame-ancestors {'self' if is_public_file else 'none'};"
+            f"frame-ancestors {frame_ancestors};"
         )
         response.headers["Content-Security-Policy"] = csp
-
-        # Public presentation files are intentionally embeddable by the
-        # same-origin spectator page; all other responses remain DENY by default.
-        response.headers["X-Frame-Options"] = "SAMEORIGIN" if is_public_file else "DENY"
 
         if self.settings.is_production and self.settings.cookie_secure:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -84,6 +87,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # چون index.html نام فایل‌های hashشدهٔ JS/CSS را در خود دارد.
         # در مقابل، assetهای Vite قابل cache طولانی‌مدت هستند.
         content_type = response.headers.get("content-type", "").lower()
+        path = request.url.path
         if content_type.startswith("text/html"):
             response.headers["Cache-Control"] = (
                 "no-store, no-cache, must-revalidate, proxy-revalidate, "

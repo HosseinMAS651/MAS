@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 
 class StorageBackend(ABC):
@@ -34,6 +35,14 @@ class StorageBackend(ABC):
 
     def get_presigned_download_url(self, key: str, filename: str) -> str | None:
         """Local storage has no presigned URLs; cloud backends can override this."""
+        return None
+
+    def get_local_path(self, key: str) -> Path | None:
+        """Return a safe local filesystem path when the backend is local.
+
+        Cloud backends should leave this as ``None`` and use a presigned URL
+        or the streaming interface instead.
+        """
         return None
 
     def available_bytes(self) -> int | None:

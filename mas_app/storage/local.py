@@ -81,6 +81,10 @@ class LocalStorageBackend(StorageBackend):
         path = self._safe_path(key)
         await asyncio.to_thread(self._delete, path)
 
+    def get_local_path(self, key: str) -> Path:
+        """Return the validated on-disk path for a stored object."""
+        return self._safe_path(key)
+
     def open_stream(self, key: str) -> Iterator[bytes]:
         path = self._safe_path(key)
         if not path.is_file():
