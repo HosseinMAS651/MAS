@@ -93,7 +93,12 @@ export class AudioRecorder {
         }
       };
       recorder.onstop = () => { void finalize(); };
-      try { recorder.stop(); } catch (err) { reject(err); }
+      try {
+        // Flush any data buffered since the last timeslice before stop.
+        // This reduces the chance that the final seconds never reach the server.
+        if (typeof recorder.requestData === 'function') recorder.requestData();
+        recorder.stop();
+      } catch (err) { reject(err); }
     });
     return this.stopPromise;
   }

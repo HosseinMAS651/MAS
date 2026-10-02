@@ -118,3 +118,32 @@ def test_delete_speaker_recording_prompt(client: TestClient):
     room_detail = client.get(f"/api/rooms/{room_id}").json()["room"]
     assert len(room_detail["recordings"]) == 1
     assert "مهندس کمالی" in room_detail["recordings"][0]["filename"]
+
+
+def test_recording_is_saved_before_timer_finish(client: TestClient):
+    """The UI finish flow can archive the recording first, then finish the timer."""
+    room_id, speaker_id = _setup_recording_room(client, "user_two_step_finish")
+    start = client.post(f"/api/rooms/{room_id}/timer/action", json={"action": "start"})
+    assert start.status_code == 200
+    status = client.get(f"/api/rooms/{room_id}/recording/status").json()
+    session_id = status["session"]["session_id"]
+
+    payload = b"browser-webm-data"
+    chunk = client.post(
+        f"/api/rooms/{room_id}/recording/chunk",
+        data={"session_id": session_id, "seq": 0},
+        files={"chunk": ("chunk_0.webm", io.BytesIO(payload), "audio/webm")},
+    )
+    assert chunk.status_code == 200
+
+    saved = client.post(f"/api/rooms/{room_id}/recording/finish", json={"save": True})
+    assert saved.status_code == 200
+    assert saved.json()["file"] is not None
+
+    timer_finish = client.post(f"/api/rooms/{room_id}/timer/action", json={"action": "finish"})
+    assert timer_finish.status_code == 200
+
+    recording_status = client.get(f"/api/rooms/{room_id}/recording/status").json()
+    assert recording_status["active"] is False
+    room_detail = client.get(f"/api/rooms/{room_id}").json()["room"]
+    assert len(room_detail["recordings"]) == 1

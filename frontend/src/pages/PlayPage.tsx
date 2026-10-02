@@ -31,6 +31,7 @@ export const PlayPage: React.FC = () => {
   const recorderRef = useRef<AudioRecorder | null>(null);
   const activeSessionIdRef = useRef<number | null>(null);
   const recordingSpeakerIdRef = useRef<number | null>(null);
+  const finishingRef = useRef(false);
 
   // دیالوگ‌های کنترلی
   const [showOvertimeModal, setShowOvertimeModal] = useState<boolean>(false);
@@ -157,13 +158,17 @@ export const PlayPage: React.FC = () => {
   const handleStopRecording = useCallback(async (save: boolean = true) => {
     setRecState('saving');
     try {
-      await stopBrowserRecorder();
-      await api.post(`/api/rooms/${id}/recording/finish`, { save });
-    } catch (err: any) {
-      console.warn('خطا در ذخیره ضبط:', err);
-      alert(err?.message || 'خطا در ذخیره ضبط.');
+      if (recorderRef.current) await stopBrowserRecorder();
       if (save) {
-        try { await api.post(`/api/rooms/${id}/recording/finish`, { save: false }); } catch {}
+        const status = await api.get(`/api/rooms/${id}/recording/status`);
+        if (status?.active) {
+          await api.post(`/api/rooms/${id}/recording/finish`, { save: true });
+        }
+      } else {
+        const status = await api.get(`/api/rooms/${id}/recording/status`);
+        if (status?.active) {
+          await api.post(`/api/rooms/${id}/recording/finish`, { save: false });
+        }
       }
     } finally {
       activeSessionIdRef.current = null;
@@ -268,10 +273,27 @@ export const PlayPage: React.FC = () => {
 
   // اکشن‌های کنترل تایمر
   const handleAction = async (action: string, speakerId?: number) => {
+    const isFinishAction = action === 'finish' || action === 'finish_overtime';
+    if (isFinishAction && finishingRef.current) return;
+    if (isFinishAction) finishingRef.current = true;
+
     try {
-      // در عملیات پایان/بازنشانی، ابتدا recorder را کامل متوقف می‌کنیم تا آخرین
-      // dataavailable و upload تمام شود؛ سپس backend همان session را finalize/discard می‌کند.
-      if (['finish', 'finish_overtime', 'reset'].includes(action) && recorderRef.current) {
+      // پایان ضبط را پیش از پایان تایمر انجام می‌دهیم. این دو مرحله جدا هستند تا
+      // مونتاژ/ذخیره فایل، قفل RoomState را برای مدت I/O نگه ندارد و در صورت خطا
+      // خود ضبط برای تلاش مجدد باقی بماند.
+      if (isFinishAction && recordingEnabled) {
+        if (recorderRef.current) {
+          await stopBrowserRecorder();
+        }
+        // The recording endpoint is the single authority for archival. A 404
+        // simply means there is no active server-side recording (for example,
+        // recording was unavailable after a reload), so the timer can still finish.
+        try {
+          await api.post(`/api/rooms/${id}/recording/finish`, { save: true });
+        } catch (err: any) {
+          if (err?.status !== 404) throw err;
+        }
+      } else if (['reset'].includes(action) && recorderRef.current) {
         await stopBrowserRecorder();
       }
 
@@ -289,13 +311,11 @@ export const PlayPage: React.FC = () => {
         } else if (action === 'pause') {
           handlePauseRecording();
         } else if (action === 'goto') {
-          // Backend ضبط سخنران قبلی را pause کرده؛ recorder مرورگر هم باید قطع شود تا
-          // chunkهای بعدی به session سخنران قبلی نروند.
           if (recorderRef.current) {
             try { await stopBrowserRecorder(); } catch {}
           }
           setRecState('inactive');
-        } else if (action === 'finish' || action === 'finish_overtime' || action === 'reset') {
+        } else if (isFinishAction || action === 'reset') {
           setShowOvertimeModal(false);
           setRecState('inactive');
           activeSessionIdRef.current = null;
@@ -305,8 +325,11 @@ export const PlayPage: React.FC = () => {
       }
     } catch (err: any) {
       alert(err.message || 'خطا در اعمال دستور تایمر.');
+    } finally {
+      if (isFinishAction) finishingRef.current = false;
     }
   };
+
 
 
   const handleToggleReactions = async () => {
@@ -517,7 +540,7 @@ export const PlayPage: React.FC = () => {
 
           <button
             onClick={() => handleAction('finish')}
-            disabled={!currentSp || currentSp.is_finished}
+            disabled={!currentSp || currentSp.is_finished || recState === 'saving'}
             className="px-6 py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm rounded-2xl border border-slate-700 transition-all hover:scale-105 active:scale-95 disabled:opacity-40"
           >
             ✓ اتمام سخنرانی {recordingEnabled && '(ذخیره ضبط)'}

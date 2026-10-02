@@ -234,12 +234,32 @@ export const PublicRoomPage: React.FC = () => {
                   src={`/api/public/${token}/files/${activeInlineFile.id}`}
                   className="w-full max-w-md"
                 />
-              ) : (
+              ) : activeInlineFile.content_type.startsWith('video/') ? (
+                <video
+                  controls
+                  playsInline
+                  src={`/api/public/${token}/files/${activeInlineFile.id}`}
+                  className="w-full h-full object-contain"
+                />
+              ) : activeInlineFile.content_type === 'application/pdf' || activeInlineFile.content_type.startsWith('text/') ? (
                 <iframe
                   src={`/api/public/${token}/files/${activeInlineFile.id}`}
                   title={activeInlineFile.filename}
                   className="w-full h-full border-0"
                 />
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-4 px-6 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center text-3xl">📄</div>
+                  <p className="text-sm font-bold text-slate-300">این نوع فایل پیش‌نمایش مستقیم مرورگر را پشتیبانی نمی‌کند.</p>
+                  <a
+                    href={`/api/public/${token}/files/${activeInlineFile.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold transition-colors"
+                  >
+                    باز کردن فایل ↗
+                  </a>
+                </div>
               )}
             </div>
           </div>
