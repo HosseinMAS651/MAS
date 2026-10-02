@@ -24,7 +24,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setAuthError('');
       let lastError: any = null;
-
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
           const data = await api.get('/api/auth/me');
@@ -32,7 +31,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         } catch (err: any) {
           lastError = err;
-          // 401 means the session is genuinely invalid; retry only transient errors.
           if (err?.status === 401) {
             setUser(null);
             setCsrfToken('');
@@ -44,10 +42,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       }
-
       throw lastError || new Error('ارتباط با سرور برقرار نشد.');
     } catch (err: any) {
-      // A transient server/network outage is not treated as logout.
       setAuthError(err?.message || 'ارتباط با سرور برقرار نشد.');
     } finally {
       setLoading(false);
