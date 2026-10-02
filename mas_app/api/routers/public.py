@@ -8,7 +8,7 @@ import urllib.parse
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse as FastAPIFileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -142,6 +142,12 @@ async def get_public_file(
     storage: Annotated[object, Depends(get_storage_backend)],
     client_ip: Annotated[str, Depends(get_client_ip)],
 ) -> Response:
+    """Serve a public live file safely and efficiently.
+
+    Local storage uses Starlette's FileResponse so browsers can issue Range/HEAD
+    requests for PDF/audio/video content. Missing or stale physical files are
+    reported as a normal 404 instead of falling through to the global 500 handler.
+    """
     room = room_service.get_room_by_public_token(session, token)
     if not room.live_files_enabled:
         raise ForbiddenError("نمایش فایل‌های زنده در این اتاق مجاز نیست.")
@@ -167,15 +173,42 @@ async def get_public_file(
     if presigned:
         from fastapi.responses import RedirectResponse
 
-        return RedirectResponse(presigned, status_code=303)
+        response = RedirectResponse(presigned, status_code=303)
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
 
     quoted_filename = urllib.parse.quote(file.filename)
     headers = {
         "Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}",
-        "Content-Length": str(file.size_bytes),
+        "Cache-Control": "private, max-age=60, must-revalidate",
+        "Accept-Ranges": "bytes",
+        "X-Content-Type-Options": "nosniff",
+        # Public live files are embedded by the same-origin spectator page.
+        "X-Frame-Options": "SAMEORIGIN",
     }
-    stream = storage.open_stream(file.storage_key)
-    return StreamingResponse(stream, media_type=file.content_type, headers=headers)
+
+    local_path = getattr(storage, "get_file_path", lambda _key: None)(file.storage_key)
+    if local_path is not None:
+        return FastAPIFileResponse(
+            path=str(local_path),
+            media_type=file.content_type or "application/octet-stream",
+            filename=file.filename,
+            content_disposition_type="inline",
+            headers=headers,
+        )
+
+    try:
+        stream = storage.open_stream(file.storage_key)
+    except FileNotFoundError as exc:
+        raise NotFoundError("فایل روی فضای ذخیره‌سازی یافت نشد. لطفاً فایل را دوباره بارگذاری کنید.") from exc
+    except (OSError, ValueError) as exc:
+        raise NotFoundError("دسترسی به فایل ذخیره‌شده امکان‌پذیر نیست. لطفاً فایل را دوباره بارگذاری کنید.") from exc
+
+    return StreamingResponse(
+        stream,
+        media_type=file.content_type or "application/octet-stream",
+        headers={**headers, "Content-Length": str(file.size_bytes)},
+    )
 
 
 @router.get("/qr")

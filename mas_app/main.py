@@ -55,6 +55,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "microphone=(self), camera=(), geolocation=()"
 
         # سیاست محتوای امن (CSP)
+        path = request.url.path
+        is_public_file = path.startswith("/api/public/") and "/files/" in path
         csp = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
@@ -63,9 +65,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "media-src 'self' blob: https:; "
             "connect-src 'self' blob: https:; "
             "font-src 'self' data:; "
-            "frame-ancestors 'none';"
+            f"frame-ancestors {'self' if is_public_file else 'none'};"
         )
         response.headers["Content-Security-Policy"] = csp
+
+        # Public presentation files are intentionally embeddable by the
+        # same-origin spectator page; all other responses remain DENY by default.
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if is_public_file else "DENY"
 
         if self.settings.is_production and self.settings.cookie_secure:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -73,6 +79,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # جلوگیری از افشای نوع سرور
         if "server" in response.headers:
             del response.headers["server"]
+
+        # HTML صفحهٔ اصلی نباید بین Deployها از cache مرورگر/Proxy باقی بماند؛
+        # چون index.html نام فایل‌های hashشدهٔ JS/CSS را در خود دارد.
+        # در مقابل، assetهای Vite قابل cache طولانی‌مدت هستند.
+        content_type = response.headers.get("content-type", "").lower()
+        if content_type.startswith("text/html"):
+            response.headers["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, proxy-revalidate, "
+                "max-age=0, s-maxage=0"
+            )
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        elif path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
 
         return response
 
