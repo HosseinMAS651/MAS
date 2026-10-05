@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
@@ -62,7 +63,13 @@ class Settings(BaseSettings):
     )
 
     # ── عمومی ────────────────────────────────────────────────
-    env: Environment = "development"
+    # Render always exposes RENDER=true. Treat a missing MAS_ENV there as
+    # production rather than silently enabling development-only fallbacks.
+    env: Environment = Field(
+        default_factory=lambda: "production"
+        if os.getenv("RENDER", "").lower() == "true"
+        else "development"
+    )
     log_level: str = "INFO"
     public_base_url: str = ""
     enable_docs: bool | None = None
