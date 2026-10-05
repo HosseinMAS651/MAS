@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import urllib.parse
 from typing import Annotated
 
@@ -20,20 +21,21 @@ from sqlalchemy.orm import Session
 
 from ...core.errors import NotFoundError, ValidationAppError
 from ...db.models import SpeechFile, User
-from ...schemas.file import FileResponse
+from ...schemas.file import FileResponse, FileReviewRequest
 from ...schemas.room import (
     RoomCreateRequest,
     RoomDetailResponse,
     RoomSummaryResponse,
     RoomUpdateRequest,
 )
-from ...schemas.speaker import SpeakerResponse
+from ...schemas.speaker import OwnerSpeakerResponse
 from ..deps import (
     get_client_ip,
     get_current_active_user,
     get_db,
     get_room_service,
     get_storage_backend,
+    get_timer_service,
 )
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
@@ -56,6 +58,8 @@ def list_rooms(
             capacity=r.capacity,
             recording_enabled=r.recording_enabled,
             live_files_enabled=r.live_files_enabled,
+            speaker_mode_enabled=r.speaker_mode_enabled,
+            speaker_uploads_enabled=r.speaker_uploads_enabled,
             public_enabled=r.public_enabled,
             timing_mode=r.timing_mode,
             global_seconds=r.global_seconds,
@@ -90,6 +94,8 @@ def create_room(
         global_seconds=payload.global_seconds,
         order_mode=payload.order_mode,
         public_enabled=payload.public_enabled,
+        speaker_mode_enabled=payload.speaker_mode_enabled,
+        speaker_uploads_enabled=payload.speaker_uploads_enabled,
         ip=client_ip,
     )
     return {
@@ -104,16 +110,24 @@ def get_room_detail(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[Session, Depends(get_db)],
     room_service: Annotated[object, Depends(get_room_service)],
+    timer_service: Annotated[object, Depends(get_timer_service)],
 ) -> dict:
     room = room_service.get_room_for_user(session, room_id, current_user)
+    room_service.expire_speaker_presence(session, room)
+    snapshot = timer_service.get_snapshot(session, room)
+    current_speaker_id = snapshot["current_speaker_id"]
     speakers = sorted(room.speakers, key=lambda s: s.order_index)
 
     sp_responses = []
     for s in speakers:
-        el = s.timer.elapsed_ms if s.timer else 0
-        ot = s.timer.overtime_ms if s.timer else 0
+        if s.id == current_speaker_id:
+            el = snapshot["elapsed_ms"]
+            ot = snapshot["overtime_ms"]
+        else:
+            el = s.timer.elapsed_ms if s.timer else 0
+            ot = s.timer.overtime_ms if s.timer else 0
         sp_responses.append(
-            SpeakerResponse(
+            OwnerSpeakerResponse(
                 id=s.id,
                 room_id=s.room_id,
                 order_index=s.order_index,
@@ -126,6 +140,9 @@ def get_room_detail(
                 finished_at_ms=s.finished_at_ms,
                 elapsed_ms=el,
                 overtime_ms=ot,
+                speaker_code=room_service.speaker_code_for_owner(s) if room.speaker_mode_enabled else None,
+                presence_status=s.presence_status,
+                presence_last_seen_at_ms=s.presence_last_seen_at_ms,
             )
         )
 
@@ -140,6 +157,8 @@ def get_room_detail(
         capacity=room.capacity,
         recording_enabled=room.recording_enabled,
         live_files_enabled=room.live_files_enabled,
+        speaker_mode_enabled=room.speaker_mode_enabled,
+        speaker_uploads_enabled=room.speaker_uploads_enabled,
         public_enabled=room.public_enabled,
         public_token=room.public_token,
         timing_mode=room.timing_mode,
@@ -178,6 +197,8 @@ def update_room(
         global_seconds=payload.global_seconds,
         order_mode=payload.order_mode,
         public_enabled=payload.public_enabled,
+        speaker_mode_enabled=payload.speaker_mode_enabled,
+        speaker_uploads_enabled=payload.speaker_uploads_enabled,
         confirm_shrink=payload.confirm_shrink,
         ip=client_ip,
     )
@@ -258,6 +279,22 @@ async def upload_file(
     return {"ok": True, "file": FileResponse.model_validate(speech_file)}
 
 
+@router.post("/{room_id}/files/{file_id}/review")
+def review_speaker_file(
+    room_id: int,
+    file_id: int,
+    payload: FileReviewRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+) -> dict:
+    room = room_service.get_room_for_user(session, room_id, current_user)
+    speech_file = room_service.review_speech_file(
+        session, room, file_id, approved=payload.approved
+    )
+    return {"ok": True, "file": FileResponse.model_validate(speech_file)}
+
+
 @router.delete("/{room_id}/files/{file_id}")
 def delete_file(
     room_id: int,
@@ -299,8 +336,51 @@ async def download_file(
         "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
         "Content-Length": str(file.size_bytes),
     }
-    stream = storage.open_stream(file.storage_key)
+    try:
+        stream = await asyncio.to_thread(storage.open_stream, file.storage_key)
+    except FileNotFoundError as exc:
+        raise NotFoundError("فایل روی فضای ذخیره‌سازی یافت نشد.") from exc
     return StreamingResponse(stream, media_type=file.content_type, headers=headers)
+
+
+@router.get("/{room_id}/files/{file_id}/play")
+async def play_audio_file(
+    room_id: int,
+    file_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+    storage: Annotated[object, Depends(get_storage_backend)],
+) -> Response:
+    """Stream an archived recording inline for the browser audio player."""
+    room = room_service.get_room_for_user(session, room_id, current_user)
+    speech_file = session.execute(
+        select(SpeechFile).where(
+            SpeechFile.id == file_id,
+            SpeechFile.room_id == room.id,
+            SpeechFile.upload_type == "recording",
+        )
+    ).scalar_one_or_none()
+    if not speech_file:
+        raise NotFoundError("ضبط صوتی مورد نظر یافت نشد.")
+    if not speech_file.content_type.startswith("audio/"):
+        raise ValidationAppError("این فایل از نوع صوتی قابل پخش نیست.")
+
+    quoted_filename = urllib.parse.quote(speech_file.filename)
+    try:
+        stream = await asyncio.to_thread(storage.open_stream, speech_file.storage_key)
+    except FileNotFoundError as exc:
+        raise NotFoundError("فایل ضبط روی فضای ذخیره‌سازی یافت نشد.") from exc
+    return StreamingResponse(
+        stream,
+        media_type=speech_file.content_type,
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}",
+            "Content-Length": str(speech_file.size_bytes),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/{room_id}/report/pdf")
@@ -312,9 +392,9 @@ def download_room_report_pdf(
 ) -> Response:
     """تولید و دانلود گزارش رسمی PDF رویداد به همراه لاگ‌ها و فایل‌ها."""
     room = room_service.get_room_for_user(session, room_id, current_user)
+    from ...db.models import AuditLog
     from ...services.pdf_report_service import PdfReportService
     from ...services.reaction_service import reaction_manager
-    from ...db.models import AuditLog
 
     # دریافت لاگ‌های وقایع مربوط به این اتاق
     logs = session.execute(

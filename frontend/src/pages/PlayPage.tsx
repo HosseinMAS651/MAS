@@ -105,13 +105,10 @@ export const PlayPage: React.FC = () => {
     }
 
     try {
-      const statusRes = await api.get(`/api/rooms/${id}/recording/status`);
-      const sId = statusRes?.session?.session_id;
-      if (!sId) {
-        // Timer باید پیش از این action نشست را ساخته باشد؛ ساخت recorder بدون session
-        // باعث orphan chunk می‌شود، پس به‌جای حدس‌زدن صبر می‌کنیم تا سرور آماده باشد.
-        throw new Error('نشست ضبط روی سرور آماده نیست. لطفاً دوباره شروع کنید.');
-      }
+      const mimeType = AudioRecorder.getSupportedMimeType() || 'audio/webm';
+      const startRes = await api.post(`/api/rooms/${id}/recording/start`, { mime_type: mimeType });
+      const sId = startRes?.session_id;
+      if (!sId) throw new Error('نشست ضبط روی سرور آماده نیست. لطفاً دوباره شروع کنید.');
 
       activeSessionIdRef.current = sId;
       recordingSpeakerIdRef.current = currentSp.id;
@@ -122,6 +119,7 @@ export const PlayPage: React.FC = () => {
 
       await rec.start({
         timesliceMs: 4000,
+        initialSeq: Number(startRes.next_seq || 0),
         onChunk: async (chunkBlob: Blob, seq: number) => {
           const targetSessionId = activeSessionIdRef.current;
           if (!targetSessionId) throw new Error('نشست ضبط دیگر فعال نیست.');
@@ -288,6 +286,15 @@ export const PlayPage: React.FC = () => {
         // The recording endpoint is the single authority for archival. A 404
         // simply means there is no active server-side recording (for example,
         // recording was unavailable after a reload), so the timer can still finish.
+        try {
+          await api.post(`/api/rooms/${id}/recording/finish`, { save: true });
+        } catch (err: any) {
+          if (err?.status !== 404) throw err;
+        }
+      } else if (action === 'goto' && recordingEnabled && state?.current_speaker_id !== speakerId) {
+        // Flush and save the current owner-device recording before TimerService
+        // changes speakers; otherwise the server could finalize before the last chunk arrives.
+        if (recorderRef.current) await stopBrowserRecorder();
         try {
           await api.post(`/api/rooms/${id}/recording/finish`, { save: true });
         } catch (err: any) {

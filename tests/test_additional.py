@@ -63,6 +63,8 @@ def test_speaker_reorder(client: TestClient):
     new_speakers = client.get(f"/api/rooms/{room_id}").json()["room"]["speakers"]
     assert [s["id"] for s in new_speakers] == reversed_ids
     assert [s["order_index"] for s in new_speakers] == [0, 1, 2]
+    timer_state = client.get(f"/api/rooms/{room_id}/timer/state").json()["state"]
+    assert timer_state["current_index"] == reversed_ids.index(timer_state["current_speaker_id"])
 
 
 def test_legacy_database_migration_with_duplicates():

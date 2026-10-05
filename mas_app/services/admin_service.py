@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from ..core.errors import NotFoundError, ValidationAppError
-from ..db.models import AuditLog, Room, SpeechFile, Speaker, User
+from ..db.models import AuditLog, Room, Speaker, SpeechFile, User
 from .audit import log_event
 
 

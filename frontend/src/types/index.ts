@@ -10,6 +10,7 @@ export interface User {
   calendar: 'jalali' | 'gregorian';
   storage_used_bytes: number;
   created_at_ms: number;
+  has_recovery_code: boolean;
 }
 
 export type str = string;
@@ -29,6 +30,12 @@ export interface Speaker {
   overtime_ms: number;
 }
 
+export interface OwnerSpeaker extends Speaker {
+  speaker_code: string | null;
+  presence_status: 'offline' | 'connected' | 'ready';
+  presence_last_seen_at_ms: number;
+}
+
 export interface SpeechFile {
   id: number;
   room_id: number;
@@ -37,6 +44,7 @@ export interface SpeechFile {
   content_type: string;
   size_bytes: number;
   upload_type: 'common' | 'speaker' | 'recording';
+  approval_status: 'pending' | 'approved' | 'rejected';
   duration_ms: number | null;
   speaker_name: string;
   created_at_ms: number;
@@ -49,6 +57,8 @@ export interface RoomSummary {
   capacity: number;
   recording_enabled: boolean;
   live_files_enabled: boolean;
+  speaker_mode_enabled: boolean;
+  speaker_uploads_enabled: boolean;
   public_enabled: boolean;
   timing_mode: 'global' | 'individual';
   global_seconds: number;
@@ -61,7 +71,7 @@ export interface RoomSummary {
 
 export interface RoomDetail extends RoomSummary {
   public_token: string | null;
-  speakers: Speaker[];
+  speakers: OwnerSpeaker[];
   files: SpeechFile[];
   recordings: SpeechFile[];
 }
@@ -89,6 +99,8 @@ export interface TimerState {
 export interface PublicRoomState {
   room_name: string;
   public_enabled: boolean;
+  speaker_mode_enabled: boolean;
+  speaker_uploads_enabled: boolean;
   running: boolean;
   awaiting_decision: boolean;
   current_index: number;

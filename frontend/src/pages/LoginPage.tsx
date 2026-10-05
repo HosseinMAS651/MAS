@@ -78,12 +78,17 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
-        <p className="text-center text-xs text-gray-500 dark:text-slate-400">
-          حساب کاربری ندارید؟{' '}
-          <Link to="/register" className="text-blue-600 dark:text-blue-400 font-bold hover:underline">
-            ثبت‌نام رایگان
+        <div className="space-y-2 text-center text-xs text-gray-500 dark:text-slate-400">
+          <p>
+            حساب کاربری ندارید؟{' '}
+            <Link to="/register" className="text-blue-600 dark:text-blue-400 font-bold hover:underline">
+              ثبت‌نام رایگان
+            </Link>
+          </p>
+          <Link to="/recover" className="inline-block font-bold text-amber-700 dark:text-amber-400 hover:underline">
+            رمز عبور را فراموش کرده‌اید؟
           </Link>
-        </p>
+        </div>
       </div>
     </div>
   );

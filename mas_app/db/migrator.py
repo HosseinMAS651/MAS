@@ -37,6 +37,7 @@ def _legacy_add_columns(db: Database) -> None:
     """
     now_ms = utc_now_ms()
     bool_default = "1" if db.is_sqlite else "TRUE"
+    bool_false_default = "0" if db.is_sqlite else "FALSE"
     specs: dict[str, list[tuple[str, str]]] = {
         "users": [
             ("username_key", "VARCHAR(32)"),
@@ -51,6 +52,7 @@ def _legacy_add_columns(db: Database) -> None:
             ("storage_used_bytes", "BIGINT DEFAULT 0"),
             ("failed_login_count", "INTEGER DEFAULT 0"),
             ("locked_until_ms", "BIGINT DEFAULT 0"),
+            ("recovery_code_hash", "VARCHAR(64)"),
             ("created_at_ms", f"BIGINT DEFAULT {now_ms}"),
             ("updated_at_ms", f"BIGINT DEFAULT {now_ms}"),
             ("last_login_at_ms", "BIGINT DEFAULT 0"),
@@ -58,9 +60,11 @@ def _legacy_add_columns(db: Database) -> None:
         ],
         "rooms": [
             ("description", "TEXT DEFAULT ''"),
-            ("recording_enabled", f"BOOLEAN DEFAULT {bool_default}"),
-            ("live_files_enabled", f"BOOLEAN DEFAULT {bool_default}"),
-            ("public_enabled", f"BOOLEAN DEFAULT {bool_default}"),
+            ("recording_enabled", f"BOOLEAN DEFAULT {bool_false_default}"),
+            ("live_files_enabled", f"BOOLEAN DEFAULT {bool_false_default}"),
+            ("speaker_mode_enabled", f"BOOLEAN DEFAULT {bool_false_default}"),
+            ("speaker_uploads_enabled", f"BOOLEAN DEFAULT {bool_false_default}"),
+            ("public_enabled", f"BOOLEAN DEFAULT {bool_false_default}"),
             ("public_token", "VARCHAR(43)"),
             ("public_token_created_at_ms", "BIGINT DEFAULT 0"),
             ("timing_mode", "VARCHAR(16) DEFAULT 'global'"),
@@ -73,8 +77,8 @@ def _legacy_add_columns(db: Database) -> None:
         ],
         "room_states": [
             ("current_index", "INTEGER DEFAULT 0"),
-            ("running", f"BOOLEAN DEFAULT {bool_default}"),
-            ("awaiting_decision", f"BOOLEAN DEFAULT {bool_default}"),
+            ("running", f"BOOLEAN DEFAULT {bool_false_default}"),
+            ("awaiting_decision", f"BOOLEAN DEFAULT {bool_false_default}"),
             ("started_at_ms", "BIGINT DEFAULT 0"),
             ("overtime_ms", "BIGINT DEFAULT 0"),
             ("stop_reason", "VARCHAR(24) DEFAULT ''"),
@@ -86,8 +90,13 @@ def _legacy_add_columns(db: Database) -> None:
             ("age", "INTEGER"),
             ("description", "TEXT DEFAULT ''"),
             ("speaking_seconds", "INTEGER DEFAULT 300"),
-            ("is_finished", f"BOOLEAN DEFAULT {bool_default}"),
+            ("is_finished", f"BOOLEAN DEFAULT {bool_false_default}"),
             ("finished_at_ms", "BIGINT DEFAULT 0"),
+            ("speaker_code_hash", "VARCHAR(64)"),
+            ("speaker_code_encrypted", "VARCHAR(512)"),
+            ("speaker_session_hash", "VARCHAR(64)"),
+            ("presence_status", "VARCHAR(16) DEFAULT 'offline'"),
+            ("presence_last_seen_at_ms", "BIGINT DEFAULT 0"),
             ("created_at_ms", f"BIGINT DEFAULT {now_ms}"),
             ("updated_at_ms", f"BIGINT DEFAULT {now_ms}"),
         ],
@@ -100,6 +109,7 @@ def _legacy_add_columns(db: Database) -> None:
             ("content_type", "VARCHAR(120) DEFAULT 'application/octet-stream'"),
             ("size_bytes", "BIGINT DEFAULT 0"),
             ("upload_type", "VARCHAR(16) DEFAULT 'common'"),
+            ("approval_status", "VARCHAR(16) DEFAULT 'approved'"),
             ("duration_ms", "BIGINT"),
             ("speaker_name", "VARCHAR(120) DEFAULT ''"),
             ("sha256", "VARCHAR(64) DEFAULT ''"),
@@ -227,6 +237,21 @@ def _legacy_add_columns(db: Database) -> None:
                     {"username": base_name, "key": candidate, "id": row_id},
                 )
 
+    # Legacy installs may already have the room-wide active recording guard.
+    # Replace only that index (no rows/files are touched) so a paused recording
+    # for one speaker cannot block the next speaker in the same room.
+    if "recording_sessions" in tables:
+        with db.engine.begin() as conn:
+            conn.execute(text("DROP INDEX IF EXISTS uq_recording_sessions_one_active_per_room"))
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "uq_recording_sessions_one_active_per_room_speaker "
+                    "ON recording_sessions (room_id, speaker_id) "
+                    "WHERE status IN ('recording', 'paused', 'finalizing')"
+                )
+            )
+
     # Create missing tables without changing existing legacy rows.
     Base.metadata.create_all(db.engine, checkfirst=True)
 
@@ -238,10 +263,24 @@ def _legacy_add_columns(db: Database) -> None:
     if missing:
         raise RuntimeError(f"مهاجرت legacy ناقص ماند؛ جداول گمشده: {', '.join(sorted(missing))}")
 
+    if "speakers" in inspector.get_table_names():
+        with db.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_speaker_room_code_hash "
+                    "ON speakers(room_id, speaker_code_hash)"
+                )
+            )
+
     if "users" in inspector.get_table_names():
         with db.engine.begin() as conn:
             try:
-                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username_key_legacy ON users(username_key)"))
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "uq_users_username_key_legacy ON users(username_key)"
+                    )
+                )
             except Exception as exc:
                 raise RuntimeError("نام‌های کاربری legacy حتی پس از نرمال‌سازی یکتا نشدند.") from exc
 

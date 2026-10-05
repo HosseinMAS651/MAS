@@ -172,7 +172,11 @@ def _migrate_legacy_database_if_needed(db: Database, inspector: object) -> None:
                 ("description", "ALTER TABLE rooms ADD COLUMN description TEXT DEFAULT ''"),
                 ("public_enabled", f"ALTER TABLE rooms ADD COLUMN public_enabled BOOLEAN DEFAULT {bool_f}"),
                 ("public_token", "ALTER TABLE rooms ADD COLUMN public_token VARCHAR(43)"),
-                ("public_token_created_at_ms", "ALTER TABLE rooms ADD COLUMN public_token_created_at_ms BIGINT DEFAULT 0"),
+                (
+                    "public_token_created_at_ms",
+                    "ALTER TABLE rooms ADD COLUMN "
+                    "public_token_created_at_ms BIGINT DEFAULT 0",
+                ),
                 ("created_at_ms", "ALTER TABLE rooms ADD COLUMN created_at_ms BIGINT DEFAULT 0"),
                 ("updated_at_ms", "ALTER TABLE rooms ADD COLUMN updated_at_ms BIGINT DEFAULT 0"),
             ]

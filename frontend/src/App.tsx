@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { Navbar } from './components/Navbar';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { RecoverPasswordPage } from './pages/RecoverPasswordPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RoomsListPage } from './pages/RoomsListPage';
 import { RoomDetailPage } from './pages/RoomDetailPage';
@@ -67,6 +68,7 @@ export const AppContent: React.FC = () => {
                   <Route path="/" element={<Navigate to="/rooms" replace />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterPage />} />
+                  <Route path="/recover" element={<RecoverPasswordPage />} />
 
                   <Route
                     path="/profile"

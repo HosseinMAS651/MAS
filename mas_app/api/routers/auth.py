@@ -7,9 +7,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
+from ...core.errors import RateLimitExceededError, UnauthorizedError
 from ...schemas.auth import (
     ChangePasswordRequest,
+    IssueRecoveryCodeRequest,
     LoginRequest,
+    RecoverPasswordRequest,
     RegisterRequest,
     UpdateProfileRequest,
     UserResponse,
@@ -46,6 +49,9 @@ def register(
         ip=client_ip,
         user_agent=user_agent,
     )
+    # کد بازیابی فقط یک‌بار در پاسخ ثبت‌نام نمایش داده می‌شود؛ فقط هش آن در DB می‌ماند.
+    recovery_code = auth_service.issue_recovery_code(session, user, ip=client_ip, user_agent=user_agent)
+
     # لاگین خودکار بلافاصله پس از ثبت‌نام
     _, session_token, csrf_token = auth_service.login(
         session,
@@ -80,6 +86,7 @@ def register(
     return {
         "ok": True,
         "user": UserResponse.model_validate(user),
+        "recovery_code": recovery_code,
     }
 
 
@@ -93,13 +100,18 @@ def login(
     client_ip: Annotated[str, Depends(get_client_ip)],
 ) -> dict:
     user_agent = request.headers.get("user-agent", "")
-    user, session_token, csrf_token = auth_service.login(
-        session,
-        username=payload.username,
-        password=payload.password,
-        ip=client_ip,
-        user_agent=user_agent,
-    )
+    try:
+        user, session_token, csrf_token = auth_service.login(
+            session,
+            username=payload.username,
+            password=payload.password,
+            ip=client_ip,
+            user_agent=user_agent,
+        )
+    except (UnauthorizedError, RateLimitExceededError):
+        # Preserve the rate-limit bucket and failed-login audit despite the 401/429.
+        session.commit()
+        raise
 
     settings = auth_service.settings
     response.set_cookie(
@@ -139,8 +151,16 @@ def logout(
     token = request.cookies.get(auth_service.settings.cookie_name)
     if token:
         auth_service.logout(session, token)
-    response.delete_cookie(key=auth_service.settings.cookie_name, path="/", domain=auth_service.settings.cookie_domain or None)
-    response.delete_cookie(key=auth_service.settings.csrf_cookie_name, path="/", domain=auth_service.settings.cookie_domain or None)
+    response.delete_cookie(
+        key=auth_service.settings.cookie_name,
+        path="/",
+        domain=auth_service.settings.cookie_domain or None,
+    )
+    response.delete_cookie(
+        key=auth_service.settings.csrf_cookie_name,
+        path="/",
+        domain=auth_service.settings.cookie_domain or None,
+    )
     return {"ok": True, "message": "خروج با موفقیت انجام شد."}
 
 
@@ -191,3 +211,46 @@ def change_password(
         user_agent=user_agent,
     )
     return {"ok": True, "message": "رمز عبور با موفقیت تغییر یافت."}
+
+
+@router.post("/recovery-code")
+def issue_recovery_code(
+    payload: IssueRecoveryCodeRequest,
+    request: Request,
+    current_user: Annotated[object, Depends(get_current_active_user)],
+    session: Annotated[Session, Depends(get_db)],
+    auth_service: Annotated[object, Depends(get_auth_service)],
+    client_ip: Annotated[str, Depends(get_client_ip)],
+) -> dict:
+    code = auth_service.issue_recovery_code(
+        session,
+        current_user,
+        current_password=payload.current_password,
+        ip=client_ip,
+        user_agent=request.headers.get("user-agent", ""),
+    )
+    return {"ok": True, "recovery_code": code}
+
+
+@router.post("/recover-password")
+def recover_password(
+    payload: RecoverPasswordRequest,
+    request: Request,
+    session: Annotated[Session, Depends(get_db)],
+    auth_service: Annotated[object, Depends(get_auth_service)],
+    client_ip: Annotated[str, Depends(get_client_ip)],
+) -> dict:
+    try:
+        auth_service.reset_password_with_recovery_code(
+            session,
+            username=payload.username,
+            recovery_code=payload.recovery_code,
+            new_password=payload.new_password,
+            ip=client_ip,
+            user_agent=request.headers.get("user-agent", ""),
+        )
+    except (UnauthorizedError, RateLimitExceededError):
+        # Invalid recovery attempts must count even though the API returns an error.
+        session.commit()
+        raise
+    return {"ok": True, "message": "رمز عبور با موفقیت بازنشانی شد. اکنون وارد شوید."}

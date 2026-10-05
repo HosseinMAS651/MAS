@@ -1,4 +1,3 @@
-from mas_app.services.pdf_report_service import PdfReportService
 from mas_app.services.reaction_service import reaction_manager
 
 
@@ -49,6 +48,27 @@ def test_pdf_report_and_endpoints(client):
     # اکنون ارسال واکنش باید مسدود باشد
     blocked_react = client.post(f"/api/public/{public_token}/reactions", json={"emoji": "clap"})
     assert blocked_react.status_code == 403
+
+
+def test_public_reaction_posts_are_rate_limited(client):
+    client.post("/api/auth/register", json={"username": "reaction_rate_user", "password": "password1234"})
+    created = client.post(
+        "/api/rooms",
+        json={"name": "واکنش محدود", "capacity": 1, "public_enabled": True},
+    )
+    assert created.status_code == 200
+    room_id = created.json()["room"]["id"]
+    public_token = client.get(f"/api/rooms/{room_id}").json()["room"]["public_token"]
+    reaction_manager.set_enabled(room_id, True)
+    client.app.state.settings.reaction_max_per_minute = 2
+
+    first = client.post(f"/api/public/{public_token}/reactions", json={"emoji": "heart"})
+    second = client.post(f"/api/public/{public_token}/reactions", json={"emoji": "clap"})
+    third = client.post(f"/api/public/{public_token}/reactions", json={"emoji": "fire"})
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    assert third.json()["error"]["code"] == "RATE_LIMITED"
 
 
 def test_reaction_manager_flow():

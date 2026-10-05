@@ -49,7 +49,9 @@ export const RoomDetailPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchRoom();
+    void fetchRoom();
+    const presencePoll = window.setInterval(() => { void fetchRoom(); }, 10_000);
+    return () => window.clearInterval(presencePoll);
   }, [id]);
 
   const handleSaveSpeaker = async (e: React.FormEvent) => {
@@ -101,6 +103,25 @@ export const RoomDetailPage: React.FC = () => {
       alert(err.message || 'خطا در جابه‌جایی نوبت سخنران.');
     } finally {
       setReordering(false);
+    }
+  };
+
+  const handleRotateSpeakerCode = async (speakerId: number) => {
+    if (!confirm('کد قبلی فوراً باطل و یک کد تازه ساخته می‌شود. ادامه می‌دهید؟')) return;
+    try {
+      await api.post(`/api/rooms/${id}/speakers/${speakerId}/rotate-code`);
+      await fetchRoom();
+    } catch (err: any) {
+      alert(err.message || 'خطا در تعویض کد سخنران.');
+    }
+  };
+
+  const handleReviewFile = async (fileId: number, approved: boolean) => {
+    try {
+      await api.post(`/api/rooms/${id}/files/${fileId}/review`, { approved });
+      await fetchRoom();
+    } catch (err: any) {
+      alert(err.message || 'خطا در بررسی فایل سخنران.');
     }
   };
 
@@ -257,6 +278,7 @@ export const RoomDetailPage: React.FC = () => {
                 <th className="pb-3 px-3">ردیف</th>
                 {room.order_mode === 'manual' && <th className="pb-3 px-3 text-center">جابه‌جایی</th>}
                 <th className="pb-3 px-3">نام سخنران</th>
+                {room.speaker_mode_enabled && <th className="pb-3 px-3">کد و وضعیت دستگاه</th>}
                 <th className="pb-3 px-3">جنسیت / سن</th>
                 <th className="pb-3 px-3">مدت زمان مجاز</th>
                 <th className="pb-3 px-3">زمان مصرف‌شده</th>
@@ -295,6 +317,15 @@ export const RoomDetailPage: React.FC = () => {
                   <td className="py-3 px-3 font-bold text-gray-800 dark:text-slate-200">
                     {sp.name ? sp.name : <span className="text-gray-300 dark:text-slate-600 font-normal">اسلات خالی</span>}
                   </td>
+                  {room.speaker_mode_enabled && (
+                    <td className="py-3 px-3 min-w-40">
+                      <code dir="ltr" className="font-mono font-black tracking-widest text-blue-700 dark:text-blue-300">{sp.speaker_code || '— — — —'}</code>
+                      <div className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">
+                        {sp.presence_status === 'ready' ? 'آمادهٔ میکروفون' : sp.presence_status === 'connected' ? 'متصل؛ منتظر اجازهٔ میکروفون' : 'آفلاین'}
+                      </div>
+                      <button type="button" onClick={() => handleRotateSpeakerCode(sp.id)} className="mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline">تعویض کد</button>
+                    </td>
+                  )}
                   <td className="py-3 px-3 text-xs text-gray-500 dark:text-slate-400">
                     {[
                       sp.gender === 'male' ? 'مرد' : sp.gender === 'female' ? 'زن' : '',
@@ -412,11 +443,21 @@ export const RoomDetailPage: React.FC = () => {
                   <div className="space-y-0.5">
                     <p className="font-bold text-gray-800 dark:text-slate-200 line-clamp-1">{f.filename}</p>
                     <span className="text-[11px] text-gray-400 dark:text-slate-500">
-                      {f.upload_type === 'common' ? 'فایل مشترک' : `اختصاصی سخنران: ${f.speaker_name || '—'}`} ·{' '}
-                      {formatBytes(f.size_bytes)}
+                      {f.upload_type === 'common' ? 'فایل مشترک' : `اختصاصی سخنران: ${f.speaker_name || '—'}`} · {formatBytes(f.size_bytes)}
                     </span>
+                    {f.upload_type === 'speaker' && (
+                      <span className={`text-[11px] font-bold ${f.approval_status === 'pending' ? 'text-amber-600 dark:text-amber-400' : f.approval_status === 'approved' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
+                        {f.approval_status === 'pending' ? 'در انتظار تأیید' : f.approval_status === 'approved' ? 'تأیید شده' : 'رد شده'}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {f.upload_type === 'speaker' && f.approval_status === 'pending' && (
+                      <>
+                        <button onClick={() => handleReviewFile(f.id, true)} className="font-bold text-emerald-600 hover:underline">تأیید</button>
+                        <button onClick={() => handleReviewFile(f.id, false)} className="font-bold text-amber-700 hover:underline">رد</button>
+                      </>
+                    )}
                     <a
                       href={`/api/rooms/${id}/files/${f.id}/download`}
                       className="text-blue-600 dark:text-blue-400 font-bold hover:underline"
@@ -467,6 +508,13 @@ export const RoomDetailPage: React.FC = () => {
                         {rec.duration_ms && ` · مدت: ${formatMs(rec.duration_ms)}`}
                       </span>
                     </div>
+                    <audio
+                      controls
+                      preload="metadata"
+                      src={`/api/rooms/${id}/files/${rec.id}/play`}
+                      className="max-w-[220px] h-9"
+                      aria-label={`پخش ضبط ${rec.filename}`}
+                    />
                     <div className="flex items-center gap-2">
                       <a
                         href={`/api/rooms/${id}/files/${rec.id}/download`}
@@ -593,7 +641,7 @@ export const RoomDetailPage: React.FC = () => {
         <QrModal
           isOpen={showQr}
           onClose={() => setShowQr(false)}
-          token={room.public_token}
+          publicToken={room.public_token}
           roomName={room.name}
         />
       )}

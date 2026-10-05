@@ -18,6 +18,10 @@ export const ProfilePage: React.FC = () => {
   const [passwordMsg, setPasswordMsg] = useState({ type: '', text: '' });
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryMsg, setRecoveryMsg] = useState({ type: '', text: '' });
+  const [loadingRecoveryCode, setLoadingRecoveryCode] = useState(false);
 
   if (!user) return null;
 
@@ -39,6 +43,24 @@ export const ProfilePage: React.FC = () => {
       setProfileMsg({ type: 'error', text: err.message || 'خطا در ذخیره پروفایل.' });
     } finally {
       setLoadingProfile(false);
+    }
+  };
+
+  const handleIssueRecoveryCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryMsg({ type: '', text: '' });
+    setRecoveryCode('');
+    setLoadingRecoveryCode(true);
+    try {
+      const result = await api.post('/api/auth/recovery-code', { current_password: recoveryPassword });
+      setRecoveryCode(result.recovery_code);
+      setRecoveryPassword('');
+      await refreshUser();
+      setRecoveryMsg({ type: 'success', text: 'کد تازه ساخته شد؛ اکنون آن را یادداشت کنید. کد قبلی باطل است.' });
+    } catch (err: any) {
+      setRecoveryMsg({ type: 'error', text: err.message || 'ساخت کد بازیابی ناموفق بود.' });
+    } finally {
+      setLoadingRecoveryCode(false);
     }
   };
 
@@ -226,6 +248,37 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <section className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-slate-100">کد بازیابی یک‌بارمصرف</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+              وضعیت: {user.has_recovery_code ? 'کد تنظیم شده است' : 'هنوز کدی تنظیم نشده است'}؛ ساخت کد تازه، کد قبلی را باطل می‌کند.
+            </p>
+          </div>
+        </div>
+        {recoveryMsg.text && (
+          <div className={`p-3 text-xs font-bold rounded-xl ${recoveryMsg.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'}`}>
+            {recoveryMsg.text}
+          </div>
+        )}
+        {recoveryCode && (
+          <code dir="ltr" className="block rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-4 text-center font-black tracking-widest text-amber-800 dark:text-amber-300 select-all">
+            {recoveryCode}
+          </code>
+        )}
+        <form onSubmit={handleIssueRecoveryCode} className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">برای تأیید، رمز عبور فعلی را وارد کنید</label>
+            <input type="password" required value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} dir="ltr" autoComplete="current-password" className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl text-sm" />
+          </div>
+          <button disabled={loadingRecoveryCode} className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm disabled:opacity-50">
+            {loadingRecoveryCode ? 'در حال ساخت…' : 'ساخت / تعویض کد'}
+          </button>
+        </form>
+        <p className="text-[11px] text-gray-400 dark:text-slate-500">کد خام دوباره از سرور قابل دریافت نیست. اگر گم شد و هنوز وارد حساب هستید، یک کد جدید بسازید.</p>
+      </section>
     </div>
   );
 };

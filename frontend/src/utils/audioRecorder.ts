@@ -1,5 +1,6 @@
 export interface RecorderOptions {
   timesliceMs?: number;
+  initialSeq?: number;
   onChunk: (chunk: Blob, seq: number) => Promise<void>;
   onError?: (err: Error) => void;
 }
@@ -13,12 +14,16 @@ export class AudioRecorder {
   private stopPromise: Promise<void> | null = null;
 
   static isSupported(): boolean {
-    return Boolean(navigator?.mediaDevices?.getUserMedia && window?.MediaRecorder);
+    return typeof navigator !== 'undefined'
+      && typeof window !== 'undefined'
+      && !!navigator.mediaDevices?.getUserMedia
+      && typeof window.MediaRecorder !== 'undefined';
   }
 
   static getSupportedMimeType(): string {
+    if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') return '';
     const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/wav'];
-    return candidates.find((type) => window.MediaRecorder?.isTypeSupported?.(type)) || '';
+    return candidates.find((type) => window.MediaRecorder.isTypeSupported(type)) || '';
   }
 
   async start(options: RecorderOptions): Promise<string> {
@@ -34,7 +39,7 @@ export class AudioRecorder {
       throw new Error('فرمت ضبط صدا در این مرورگر پشتیبانی نمی‌شود.');
     }
 
-    this.nextSeq = 0;
+    this.nextSeq = Math.max(0, options.initialSeq || 0);
     this.uploadChain = Promise.resolve();
     this.uploadError = null;
 
