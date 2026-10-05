@@ -45,7 +45,7 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         if connection.dialect.name == "postgresql":
             # Never let a deployment wait indefinitely for an old instance's DB lock.
-            connection.execute(text("SET lock_timeout = '8s'"))
+            connection.execute(text("SET lock_timeout = '30s'"))
             connection.execute(text("SET statement_timeout = '120s'"))
         context.configure(
             connection=connection,

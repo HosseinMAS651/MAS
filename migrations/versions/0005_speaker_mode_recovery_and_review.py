@@ -39,62 +39,55 @@ def _add_column_if_missing(table: str, column: sa.Column) -> None:
 
 def _replace_recording_index() -> None:
     bind = op.get_bind()
-    dialect = bind.dialect.name
+    indexes = _existing_indexes("recording_sessions")
 
-    if dialect != "postgresql":
-        indexes = _existing_indexes("recording_sessions")
-        if "uq_recording_sessions_one_active_per_room" in indexes:
-            op.drop_index("uq_recording_sessions_one_active_per_room", table_name="recording_sessions")
-        if "uq_recording_sessions_one_active_per_room_speaker" not in _existing_indexes("recording_sessions"):
-            op.create_index(
-                "uq_recording_sessions_one_active_per_room_speaker",
-                "recording_sessions",
-                ["room_id", "speaker_id"],
-                unique=True,
-                sqlite_where=sa.text(ACTIVE_RECORDING_PREDICATE),
-            )
+    if "uq_recording_sessions_one_active_per_room" in indexes:
+        op.drop_index(
+            "uq_recording_sessions_one_active_per_room",
+            table_name="recording_sessions",
+        )
+
+    if "uq_recording_sessions_one_active_per_room_speaker" in indexes:
         return
 
     duplicate = bind.execute(
         sa.text(
             "SELECT 1 FROM recording_sessions "
-            "WHERE speaker_id IS NOT NULL AND status IN ('recording','paused','finalizing') "
+            "WHERE speaker_id IS NOT NULL "
+            "AND status IN ('recording','paused','finalizing') "
             "GROUP BY room_id, speaker_id HAVING COUNT(*) > 1 LIMIT 1"
         )
     ).scalar_one_or_none()
 
-    # PostgreSQL CREATE/DROP INDEX CONCURRENTLY must run outside a transaction.
-    # This reduces interference with the still-live previous Render instance.
-    with op.get_context().autocommit_block():
-        bind.execute(sa.text("DROP INDEX CONCURRENTLY IF EXISTS uq_recording_sessions_one_active_per_room"))
-        if duplicate is not None:
-            # Preserve every row. A unique index cannot represent existing duplicate
-            # active sessions, so keep the lookup index non-unique until those stale
-            # rows are explicitly reconciled. The application already serializes room writes.
-            bind.execute(
-                sa.text(
-                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
-                    "ix_recording_sessions_active_room_speaker "
-                    "ON recording_sessions (room_id, speaker_id) "
-                    "WHERE status IN ('recording','paused','finalizing')"
-                )
+    if duplicate is not None:
+        # Existing duplicate active rows cannot satisfy a UNIQUE constraint.
+        # Preserve every row and use a normal partial index until the stale
+        # sessions are explicitly reconciled by application/admin logic.
+        if "ix_recording_sessions_active_room_speaker" not in _existing_indexes("recording_sessions"):
+            op.create_index(
+                "ix_recording_sessions_active_room_speaker",
+                "recording_sessions",
+                ["room_id", "speaker_id"],
+                unique=False,
+                postgresql_where=sa.text(ACTIVE_RECORDING_PREDICATE),
+                sqlite_where=sa.text(ACTIVE_RECORDING_PREDICATE),
             )
-        else:
-            bind.execute(
-                sa.text(
-                    "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
-                    "uq_recording_sessions_one_active_per_room_speaker "
-                    "ON recording_sessions (room_id, speaker_id) "
-                    "WHERE status IN ('recording','paused','finalizing')"
-                )
-            )
+    else:
+        op.create_index(
+            "uq_recording_sessions_one_active_per_room_speaker",
+            "recording_sessions",
+            ["room_id", "speaker_id"],
+            unique=True,
+            postgresql_where=sa.text(ACTIVE_RECORDING_PREDICATE),
+            sqlite_where=sa.text(ACTIVE_RECORDING_PREDICATE),
+        )
 
 
 def _ensure_speaker_code_index() -> None:
     bind = op.get_bind()
-    if bind.dialect.name != "postgresql":
-        if "uq_speaker_room_code_hash" not in _existing_indexes("speakers"):
-            op.create_index("uq_speaker_room_code_hash", "speakers", ["room_id", "speaker_code_hash"], unique=True)
+    if "uq_speaker_room_code_hash" in _existing_indexes("speakers"):
+        return
+    if "ix_speaker_room_code_hash" in _existing_indexes("speakers"):
         return
 
     duplicate = bind.execute(
@@ -105,21 +98,20 @@ def _ensure_speaker_code_index() -> None:
         )
     ).scalar_one_or_none()
 
-    with op.get_context().autocommit_block():
-        if duplicate is None:
-            bind.execute(
-                sa.text(
-                    "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_speaker_room_code_hash "
-                    "ON speakers (room_id, speaker_code_hash)"
-                )
-            )
-        else:
-            bind.execute(
-                sa.text(
-                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_speaker_room_code_hash "
-                    "ON speakers (room_id, speaker_code_hash)"
-                )
-            )
+    if duplicate is not None:
+        op.create_index(
+            "ix_speaker_room_code_hash",
+            "speakers",
+            ["room_id", "speaker_code_hash"],
+            unique=False,
+        )
+    else:
+        op.create_index(
+            "uq_speaker_room_code_hash",
+            "speakers",
+            ["room_id", "speaker_code_hash"],
+            unique=True,
+        )
 
 
 def upgrade() -> None:

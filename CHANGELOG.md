@@ -1,5 +1,12 @@
 # تاریخچه تغییرات و نسخه‌ها (Changelog)
 
+## [2.0.5] - 2026-10-06
+
+### 🚀 اصلاح migration در Render
+- PostgreSQL migration `0005` دیگر از `autocommit_block()` استفاده نمی‌کند؛ عملیات index داخل همان تراکنش Alembic انجام می‌شوند و خطای `AssertionError: self._transaction is not None` برطرف شده است.
+- در صورت وجود دادهٔ تکراری، index غیر یکتا ساخته می‌شود تا migration داده‌ها را حذف یا متوقف نکند.
+- `lock_timeout` برای Deploy روی ۳۰ ثانیه تنظیم شد.
+
 ## [2.0.4] - 2026-10-06
 
 ### 🚀 Render Free deployment
