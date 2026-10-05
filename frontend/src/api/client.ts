@@ -29,7 +29,13 @@ export function isNotModified(value: any): value is NotModifiedResult {
   return Boolean(value && value.__notModified);
 }
 
-async function request<T = any>(url: string, method = 'GET', body?: any, headers: Record<string, string> = {}): Promise<T> {
+async function request<T = any>(
+  url: string,
+  method = 'GET',
+  body?: any,
+  headers: Record<string, string> = {},
+  onResponse?: (response: Response) => void,
+): Promise<T> {
   const upper = method.toUpperCase();
   const reqHeaders: Record<string, string> = { Accept: 'application/json', ...headers };
   if (upper !== 'GET' && upper !== 'HEAD') {
@@ -48,6 +54,7 @@ async function request<T = any>(url: string, method = 'GET', body?: any, headers
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { method: upper, headers: reqHeaders, body: reqBody, credentials: 'include', signal: controller.signal });
+    onResponse?.(response);
     if (response.status === 304) return { __notModified: true } as T;
 
     let data: any = {};
@@ -69,8 +76,19 @@ async function request<T = any>(url: string, method = 'GET', body?: any, headers
 
 export const api = {
   get: <T = any>(url: string, headers?: Record<string, string>) => request<T>(url, 'GET', undefined, headers),
+  getWithMeta: async <T = any>(url: string, headers?: Record<string, string>) => {
+    let etag = '';
+    let notModified = false;
+    const data = await request<T>(url, 'GET', undefined, headers, (response) => {
+      etag = response.headers.get('ETag') || '';
+      notModified = response.status === 304;
+    });
+    return { data: isNotModified(data) ? null : data, etag, notModified };
+  },
   post: <T = any>(url: string, body?: any) => request<T>(url, 'POST', body),
+  postWithHeaders: <T = any>(url: string, body?: any, headers?: Record<string, string>) => request<T>(url, 'POST', body, headers),
   put: <T = any>(url: string, body?: any) => request<T>(url, 'PUT', body),
   delete: <T = any>(url: string) => request<T>(url, 'DELETE'),
   upload: <T = any>(url: string, formData: FormData) => request<T>(url, 'POST', formData),
+  uploadWithHeaders: <T = any>(url: string, formData: FormData, headers?: Record<string, string>) => request<T>(url, 'POST', formData, headers),
 };

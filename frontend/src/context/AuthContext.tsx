@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<User>;
-  register: (payload: any) => Promise<User>;
+  register: (payload: any) => Promise<{ user: User; recoveryCode: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   authError: string;
@@ -63,7 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await api.post('/api/auth/register', payload);
     setAuthError('');
     setUser(data.user);
-    return data.user;
+    return { user: data.user, recoveryCode: data.recovery_code };
   };
 
   const logout = async () => {

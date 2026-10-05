@@ -6,6 +6,10 @@
 class SoundAlertManager {
   private audioCtx: AudioContext | null = null;
 
+  public prepare() {
+    try { this.initCtx(); } catch { /* sound may be unavailable */ }
+  }
+
   private initCtx() {
     if (!this.audioCtx) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -15,6 +19,14 @@ class SoundAlertManager {
     }
     if (this.audioCtx && this.audioCtx.state === 'suspended') {
       void this.audioCtx.resume();
+    }
+  }
+
+  public playTurnAlert() {
+    this.playTimeUpBeep();
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => this.playTimeUpBeep(), 500);
+      window.setTimeout(() => this.playTimeUpBeep(), 1_000);
     }
   }
 

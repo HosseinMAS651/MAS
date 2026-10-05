@@ -4,6 +4,8 @@ import io
 
 from fastapi.testclient import TestClient
 
+from mas_app.db.models import RecordingSession
+
 
 def _setup_recording_room(client: TestClient, username: str = "rec_user"):
     client.post(
@@ -118,6 +120,58 @@ def test_delete_speaker_recording_prompt(client: TestClient):
     room_detail = client.get(f"/api/rooms/{room_id}").json()["room"]
     assert len(room_detail["recordings"]) == 1
     assert "مهندس کمالی" in room_detail["recordings"][0]["filename"]
+
+
+def test_delete_speaker_waits_while_recording_finalizes(client: TestClient):
+    room_id, speaker_id = _setup_recording_room(client, "user_delete_finalizing")
+    client.post(f"/api/rooms/{room_id}/timer/action", json={"action": "start"})
+    recording_status = client.get(f"/api/rooms/{room_id}/recording/status").json()
+    session_id = recording_status["session"]["session_id"]
+    chunk = client.post(
+        f"/api/rooms/{room_id}/recording/chunk",
+        data={"session_id": session_id, "seq": 0},
+        files={"chunk": ("chunk.webm", io.BytesIO(b"pending-audio"), "audio/webm")},
+    )
+    assert chunk.status_code == 200
+
+    with client.app.state.database.session() as session:
+        recording = session.get(RecordingSession, session_id)
+        recording.status = "finalizing"
+
+    response = client.delete(
+        f"/api/rooms/{room_id}/speakers/{speaker_id}?save_recording=true"
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "RECORDING_FINALIZING"
+    assert client.get(f"/api/rooms/{room_id}").json()["room"]["speakers"][0]["id"] == speaker_id
+
+
+def test_ordinary_file_upload_respects_active_recording_reservations(client: TestClient):
+    room_id, _speaker_id = _setup_recording_room(client, "user_recording_quota_reservation")
+    settings = client.app.state.settings
+    settings.max_room_storage_mb = 1
+    settings.max_user_storage_mb = 1
+
+    started = client.post(f"/api/rooms/{room_id}/timer/action", json={"action": "start"})
+    assert started.status_code == 200
+    recording_status = client.get(f"/api/rooms/{room_id}/recording/status").json()
+    session_id = recording_status["session"]["session_id"]
+    audio_chunk = b"audio" * 140_000  # 700 KB, within the one-megabyte reservation.
+    uploaded_chunk = client.post(
+        f"/api/rooms/{room_id}/recording/chunk",
+        data={"session_id": session_id, "seq": 0},
+        files={"chunk": ("chunk.webm", io.BytesIO(audio_chunk), "audio/webm")},
+    )
+    assert uploaded_chunk.status_code == 200
+
+    attempted_file = client.post(
+        f"/api/rooms/{room_id}/files",
+        data={"upload_type": "common"},
+        files={"file": ("slides.pdf", io.BytesIO(b"%PDF-1.4" + b"x" * 400_000), "application/pdf")},
+    )
+    assert attempted_file.status_code == 413
+    assert attempted_file.json()["error"]["code"] == "QUOTA_EXCEEDED"
+    assert client.get(f"/api/rooms/{room_id}").json()["room"]["files"] == []
 
 
 def test_recording_is_saved_before_timer_finish(client: TestClient):

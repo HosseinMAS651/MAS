@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, isNotModified } from '../api/client';
+import { api } from '../api/client';
+import { alertManager } from '../utils/alerts';
+import { AudioRecorder } from '../utils/audioRecorder';
 import { PublicRoomState, SpeechFile } from '../types';
 import { formatMs, formatBytes } from '../utils/formatters';
 import { QrModal } from '../components/QrModal';
@@ -15,6 +17,27 @@ const REACTIONS = [
   { key: 'star', label: '⭐' },
 ];
 
+type PublicSpeakerSession = { sessionToken: string; speakerId: number; name: string };
+type PublicRoleChoice = 'viewer' | 'speaker' | null;
+
+const sessionStorageKey = (token?: string) => token ? `mas:speaker-session:${token}` : '';
+const recordingStorageKey = (token?: string) => token ? `mas:speaker-recording:${token}` : '';
+
+function readSpeakerSession(token?: string): PublicSpeakerSession | null {
+  if (!token || typeof window === 'undefined') return null;
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(sessionStorageKey(token)) || 'null');
+    if (saved && typeof saved.sessionToken === 'string' && Number.isInteger(saved.speakerId)) return saved;
+  } catch { /* storage may be disabled */ }
+  return null;
+}
+
+function readRecordingSessionId(token?: string): number | null {
+  if (!token || typeof window === 'undefined') return null;
+  const parsed = Number(window.sessionStorage.getItem(recordingStorageKey(token)) || 0);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 export const PublicRoomPage: React.FC = () => {
   const { token } = useParams<{ token: string }>();
 
@@ -22,6 +45,20 @@ export const PublicRoomPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [showQr, setShowQr] = useState<boolean>(false);
+  const [speakerSession, setSpeakerSession] = useState<PublicSpeakerSession | null>(() => readSpeakerSession(token));
+  const [speakerChoice, setSpeakerChoice] = useState<PublicRoleChoice>(() => readSpeakerSession(token) ? 'speaker' : null);
+  const [speakerCode, setSpeakerCode] = useState('');
+  const [speakerStatus, setSpeakerStatus] = useState<'offline' | 'connected' | 'ready'>('offline');
+  const [microphoneReady, setMicrophoneReady] = useState(false);
+  const [speakerError, setSpeakerError] = useState('');
+  const [speakerBusy, setSpeakerBusy] = useState(false);
+  const [recordingRevision, setRecordingRevision] = useState(0);
+  const [speakerUploadFile, setSpeakerUploadFile] = useState<File | null>(null);
+  const [speakerUploadMessage, setSpeakerUploadMessage] = useState('');
+  const [uploadingSpeakerFile, setUploadingSpeakerFile] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
 
   // فایل در حال نمایش درون‌صفحه‌ای (Inline Presentation View)
   const [activeInlineFile, setActiveInlineFile] = useState<SpeechFile | null>(null);
@@ -34,22 +71,253 @@ export const PublicRoomPage: React.FC = () => {
   const etagRef = useRef<string>('');
   const statePollRunningRef = useRef(false);
   const reactionsPollRunningRef = useRef(false);
+  const latestStateRef = useRef<PublicRoomState | null>(null);
+  const speakerRecorderRef = useRef<AudioRecorder | null>(null);
+  const recordingSessionIdRef = useRef<number | null>(readRecordingSessionId(token));
+  const recordingTransitionRef = useRef(false);
+  const lastAlertedTurnRef = useRef<string>('');
+
+  const speakerAuthHeaders = (
+    activeSession: PublicSpeakerSession | null = speakerSession,
+  ): Record<string, string> => activeSession ? { Authorization: `Bearer ${activeSession.sessionToken}` } : {};
+
+  const clearSpeakerSession = () => {
+    try {
+      if (token) window.sessionStorage.removeItem(sessionStorageKey(token));
+    } catch { /* storage may be disabled */ }
+    setSpeakerSession(null);
+    setSpeakerStatus('offline');
+    setMicrophoneReady(false);
+  };
+
+  const enterSpeaker = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!token || speakerBusy) return;
+    setSpeakerBusy(true);
+    setSpeakerError('');
+    try {
+      const result = await api.post(`/api/public/${token}/speaker/enter`, { code: speakerCode });
+      const nextSession: PublicSpeakerSession = {
+        sessionToken: result.session_token,
+        speakerId: result.speaker.id,
+        name: result.speaker.name || 'سخنران',
+      };
+      try { window.sessionStorage.setItem(sessionStorageKey(token), JSON.stringify(nextSession)); } catch { /* session can continue in memory */ }
+      setSpeakerSession(nextSession);
+      setSpeakerChoice('speaker');
+      setSpeakerStatus('connected');
+      setMicrophoneReady(false);
+      setSpeakerCode('');
+      setSpeakerError('');
+    } catch (err: any) {
+      setSpeakerError(err.message || 'ورود با کد سخنران انجام نشد.');
+    } finally {
+      setSpeakerBusy(false);
+    }
+  };
+
+  const enableSpeakerMicrophone = async () => {
+    if (!speakerSession || !token || speakerBusy) return;
+    setSpeakerBusy(true);
+    setSpeakerError('');
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('مرورگر یا اتصال امن فعلی امکان دسترسی به میکروفون را نمی‌دهد.');
+      alertManager.prepare();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      await api.postWithHeaders(
+        `/api/public/${token}/speaker/heartbeat`,
+        { microphone_ready: true },
+        speakerAuthHeaders(),
+      );
+      setMicrophoneReady(true);
+      setSpeakerStatus('ready');
+      setSpeakerError('');
+      setRecordingRevision((revision) => revision + 1);
+    } catch (err: any) {
+      setMicrophoneReady(false);
+      setSpeakerStatus('connected');
+      setSpeakerError(err.message || 'اجازهٔ میکروفون فعال نشد. دسترسی مرورگر و تنظیمات دستگاه را بررسی کنید.');
+    } finally {
+      setSpeakerBusy(false);
+    }
+  };
+
+  const finishSpeakerRecording = async (save: boolean): Promise<boolean> => {
+    if (recordingTransitionRef.current) return false;
+    recordingTransitionRef.current = true;
+    let shouldSave = save;
+    let finalized = true;
+    try {
+      const recorder = speakerRecorderRef.current;
+      if (recorder) {
+        try {
+          await recorder.stop();
+        } catch (err: any) {
+          setSpeakerError(err.message || 'بخشی از صدای ضبط‌شده ارسال نشد؛ تلاش می‌کنیم قطعه‌های موجود را ذخیره کنیم.');
+        }
+        speakerRecorderRef.current = null;
+      }
+      const recordingId = recordingSessionIdRef.current;
+      if (recordingId && token && speakerSession) {
+        await api.postWithHeaders(
+          `/api/public/${token}/speaker/recording/finish`,
+          { session_id: recordingId, save: shouldSave },
+          speakerAuthHeaders(),
+        );
+        recordingSessionIdRef.current = null;
+        try { window.sessionStorage.removeItem(recordingStorageKey(token)); } catch { /* storage may be disabled */ }
+      }
+    } catch (err: any) {
+      finalized = false;
+      setSpeakerError(err.message || 'پایان ضبط به سرور نرسید؛ اتصال را بررسی کنید.');
+    } finally {
+      recordingTransitionRef.current = false;
+      if (finalized) setRecordingRevision((revision) => revision + 1);
+    }
+    return finalized;
+  };
+
+  const startSpeakerRecording = async () => {
+    if (!token || !speakerSession || !microphoneReady || recordingTransitionRef.current) return;
+    const currentRecorder = speakerRecorderRef.current;
+    if (currentRecorder) {
+      if (currentRecorder.getState() === 'paused') currentRecorder.resume();
+      return;
+    }
+
+    recordingTransitionRef.current = true;
+    const targetSpeakerId = speakerSession.speakerId;
+    let createdRecordingId: number | null = null;
+    let startedSuccessfully = false;
+    try {
+      if (!AudioRecorder.isSupported()) throw new Error('ضبط صدا در این مرورگر پشتیبانی نمی‌شود. از مرورگر به‌روز و اتصال HTTPS استفاده کنید.');
+      const mimeType = AudioRecorder.getSupportedMimeType() || 'audio/webm';
+      const result = await api.postWithHeaders(
+        `/api/public/${token}/speaker/recording/start`,
+        { mime_type: mimeType },
+        speakerAuthHeaders(),
+      );
+      createdRecordingId = Number(result.session_id);
+      if (!Number.isInteger(createdRecordingId) || createdRecordingId <= 0) throw new Error('شناسهٔ نشست ضبط از سرور دریافت نشد.');
+      recordingSessionIdRef.current = createdRecordingId;
+      try { window.sessionStorage.setItem(recordingStorageKey(token), String(createdRecordingId)); } catch { /* session can continue in memory */ }
+
+      const chunkExtension = mimeType.includes('mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+      const activeSession = speakerSession;
+      const recorder = new AudioRecorder();
+      speakerRecorderRef.current = recorder;
+      await recorder.start({
+        timesliceMs: 5_000,
+        initialSeq: Number(result.next_seq || 0),
+        onChunk: async (chunk, seq) => {
+          const form = new FormData();
+          form.append('session_id', String(createdRecordingId));
+          form.append('seq', String(seq));
+          form.append('chunk', chunk, `speaker-${seq}.${chunkExtension}`);
+          await api.uploadWithHeaders(
+            `/api/public/${token}/speaker/recording/chunk`,
+            form,
+            speakerAuthHeaders(activeSession),
+          );
+        },
+        onError: (err) => setSpeakerError(err.message || 'آپلود بخشی از ضبط ناموفق بود.'),
+      });
+      startedSuccessfully = true;
+      setSpeakerError('');
+    } catch (err: any) {
+      speakerRecorderRef.current = null;
+      if (createdRecordingId && token && speakerSession) {
+        try {
+          await api.postWithHeaders(
+            `/api/public/${token}/speaker/recording/finish`,
+            { session_id: createdRecordingId, save: false },
+            speakerAuthHeaders(),
+          );
+          recordingSessionIdRef.current = null;
+          try { window.sessionStorage.removeItem(recordingStorageKey(token)); } catch { /* ignore */ }
+        } catch { /* the cleanup worker will recover an abandoned empty recording */ }
+      }
+      setSpeakerError(err.message || 'ضبط خودکار صدا آغاز نشد.');
+    } finally {
+      recordingTransitionRef.current = false;
+      const latest = latestStateRef.current;
+      if (startedSuccessfully || !latest?.running || latest.current_speaker?.id !== targetSpeakerId) {
+        setRecordingRevision((revision) => revision + 1);
+      }
+    }
+  };
+
+  const leaveSpeaker = async () => {
+    if (!token || !speakerSession || speakerBusy) return;
+    setSpeakerBusy(true);
+    try {
+      if (recordingTransitionRef.current) {
+        setSpeakerError('ضبط در حال شروع یا پایان است؛ چند لحظه صبر کنید و دوباره تلاش کنید.');
+        return;
+      }
+      const recordingFinalized = await finishSpeakerRecording(true);
+      if (!recordingFinalized) return;
+      await api.postWithHeaders(`/api/public/${token}/speaker/leave`, {}, speakerAuthHeaders());
+      clearSpeakerSession();
+      setSpeakerChoice('viewer');
+      setSpeakerError('');
+    } catch (err: any) {
+      setSpeakerError(err.message || 'خروج از نشست سخنران انجام نشد.');
+    } finally {
+      setSpeakerBusy(false);
+    }
+  };
+
+  const requestBrowserNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission !== 'granted') setSpeakerError('اعلان مرورگر فعال نشد؛ صدای صفحه و لرزش دستگاه همچنان بسته به پشتیبانی مرورگر در دسترس‌اند.');
+      else setSpeakerError('');
+    } catch {
+      setSpeakerError('مرورگر اجازهٔ درخواست اعلان را نداد.');
+    }
+  };
+
+  const uploadSpeakerFile = async () => {
+    if (!token || !speakerSession || !speakerUploadFile || uploadingSpeakerFile) return;
+    setUploadingSpeakerFile(true);
+    setSpeakerUploadMessage('');
+    setSpeakerError('');
+    try {
+      const form = new FormData();
+      form.append('file', speakerUploadFile);
+      await api.uploadWithHeaders(`/api/public/${token}/speaker/files`, form, speakerAuthHeaders());
+      setSpeakerUploadFile(null);
+      setSpeakerUploadMessage('فایل برای بررسی مالک فرستاده شد و تا زمان تأیید عمومی نمی‌شود.');
+    } catch (err: any) {
+      setSpeakerError(err.message || 'آپلود فایل انجام نشد.');
+    } finally {
+      setUploadingSpeakerFile(false);
+    }
+  };
 
   const fetchPublicState = async () => {
     if (!token || statePollRunningRef.current) return;
     statePollRunningRef.current = true;
     try {
       const headers: Record<string, string> = {};
-      if (etagRef.current) {
-        headers['If-None-Match'] = etagRef.current;
-      }
-      const res = await api.get(`/api/public/${token}/state`, headers);
-      if (isNotModified(res)) return;
-      if (res && res.state) {
-        setState(res.state);
+      if (etagRef.current) headers['If-None-Match'] = etagRef.current;
+      const result = await api.getWithMeta(`/api/public/${token}/state`, headers);
+      if (result.etag) etagRef.current = result.etag;
+      if (result.notModified) return;
+      if (result.data?.state) {
+        latestStateRef.current = result.data.state;
+        setState(result.data.state);
+        setError('');
       }
     } catch (err: any) {
-      if (!state) {
+      if (!latestStateRef.current) {
         setError(err.message || 'اتاق عمومی یافت نشد یا دسترسی غیرفعال است.');
       }
     } finally {
@@ -77,6 +345,17 @@ export const PublicRoomPage: React.FC = () => {
   };
 
   useEffect(() => {
+    etagRef.current = '';
+    latestStateRef.current = null;
+    const savedSpeakerSession = readSpeakerSession(token);
+    setSpeakerSession(savedSpeakerSession);
+    setSpeakerChoice(savedSpeakerSession ? 'speaker' : null);
+    setMicrophoneReady(false);
+    setSpeakerStatus(savedSpeakerSession ? 'connected' : 'offline');
+    recordingSessionIdRef.current = readRecordingSessionId(token);
+    setState(null);
+    setError('');
+    setLoading(true);
     fetchPublicState();
     pollReactions();
     const intervalState = setInterval(fetchPublicState, 1500);
@@ -86,6 +365,92 @@ export const PublicRoomPage: React.FC = () => {
       clearInterval(intervalReactions);
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!speakerSession || !token || !state?.speaker_mode_enabled) return;
+    let disposed = false;
+    const heartbeat = async () => {
+      try {
+        const result = await api.postWithHeaders(
+          `/api/public/${token}/speaker/heartbeat`,
+          { microphone_ready: microphoneReady },
+          speakerAuthHeaders(speakerSession),
+        );
+        if (!disposed) setSpeakerStatus(result.presence_status);
+      } catch (err: any) {
+        if (disposed) return;
+        if (err.status === 401 || err.status === 404) {
+          if (speakerRecorderRef.current) void finishSpeakerRecording(false);
+          clearSpeakerSession();
+          setSpeakerChoice('speaker');
+          setSpeakerError('نشست این دستگاه منقضی یا با دستگاه دیگری جایگزین شده است؛ دوباره کد سخنران را وارد کنید.');
+        } else {
+          setSpeakerError(err.message || 'ارتباط با نشست سخنران موقتاً قطع شده است.');
+        }
+      }
+    };
+    void heartbeat();
+    const interval = window.setInterval(() => { void heartbeat(); }, 15_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [token, speakerSession, microphoneReady, state?.speaker_mode_enabled]);
+
+  useEffect(() => {
+    if (!state || !speakerSession) return;
+    const isMyTurn = state.current_speaker?.id === speakerSession.speakerId;
+    if (state.running && isMyTurn) {
+      const turnKey = `${speakerSession.speakerId}:${state.current_index}`;
+      if (lastAlertedTurnRef.current !== turnKey) {
+        lastAlertedTurnRef.current = turnKey;
+        alertManager.playTurnAlert();
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden'
+          && typeof window !== 'undefined' && 'Notification' in window
+          && Notification.permission === 'granted') {
+          const notification = new Notification('نوبت شما رسیده است', {
+            body: `زمان سخنرانی شما در «${state.room_name}» آغاز شد.`,
+            tag: `mas-speaker-turn-${speakerSession.speakerId}`,
+          });
+          notification.onclick = () => window.focus();
+        }
+      }
+    }
+  }, [state?.running, state?.current_speaker?.id, state?.current_index, speakerSession?.speakerId]);
+
+  useEffect(() => {
+    if (!speakerSession) {
+      if (speakerRecorderRef.current) void finishSpeakerRecording(true);
+      return;
+    }
+    if (!state) return;
+    if (!state.speaker_mode_enabled) {
+      if (speakerRecorderRef.current || recordingSessionIdRef.current) void finishSpeakerRecording(true);
+      clearSpeakerSession();
+      return;
+    }
+
+    const isMyTurn = state.current_speaker?.id === speakerSession.speakerId;
+    const recorder = speakerRecorderRef.current;
+    if (microphoneReady && isMyTurn && state.running) {
+      void startSpeakerRecording();
+      return;
+    }
+    if (recorder) {
+      if (isMyTurn && recorder.getState() === 'recording') recorder.pause();
+      else if (!isMyTurn) void finishSpeakerRecording(true);
+    } else if (!isMyTurn && recordingSessionIdRef.current) {
+      void finishSpeakerRecording(true);
+    }
+  }, [
+    state?.speaker_mode_enabled,
+    state?.running,
+    state?.current_speaker?.id,
+    speakerSession,
+    microphoneReady,
+    token,
+    recordingRevision,
+  ]);
 
   // بررسی خودکار باز بودن فایلی که شاید در لیست جدید دیگر در دسترس نباشد
   useEffect(() => {
@@ -122,7 +487,7 @@ export const PublicRoomPage: React.FC = () => {
     );
   }
 
-  if (error || !state) {
+  if (!state) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-center space-y-4">
         <div className="w-16 h-16 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center text-3xl font-bold">
@@ -195,6 +560,121 @@ export const PublicRoomPage: React.FC = () => {
 
       {/* بخش نمایش اصلی یا نمایش ترکیبی با فایل زنده (Inline Presentation View) */}
       <main className="max-w-6xl mx-auto w-full px-4 py-8 flex flex-col items-center justify-center text-center space-y-6 flex-1">
+        {state.speaker_mode_enabled && (
+          <section dir="rtl" className="w-full max-w-2xl bg-slate-950/90 border border-slate-700 rounded-3xl p-5 sm:p-6 text-right space-y-4 shadow-xl">
+            <div>
+              <h2 className="text-lg font-black text-white">ورود سخنران با کد</h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-400 leading-6">
+                تماشاگران می‌توانند فقط صفحه را ببینند؛ برای ضبط صدای نوبت، سخنران باید با کد وارد شود و میکروفون همین دستگاه را صریحاً فعال کند. شروع و توقف تایمر فقط در اختیار مالک اتاق است.
+              </p>
+            </div>
+
+            {!speakerSession && speakerChoice === null && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSpeakerChoice('viewer')}
+                  className="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold transition-colors"
+                >
+                  ورود به‌عنوان تماشاگر
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSpeakerChoice('speaker'); setSpeakerError(''); }}
+                  className="px-4 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-colors"
+                >
+                  ورود به‌عنوان سخنران
+                </button>
+              </div>
+            )}
+
+            {!speakerSession && speakerChoice === 'viewer' && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                <span className="text-sm text-slate-300">شما به‌عنوان تماشاگر وارد شده‌اید؛ نیازی به فعال‌سازی میکروفون نیست.</span>
+                <button type="button" onClick={() => setSpeakerChoice(null)} className="text-xs text-blue-400 hover:text-blue-300 font-bold">
+                  تغییر نقش
+                </button>
+              </div>
+            )}
+
+            {!speakerSession && speakerChoice === 'speaker' && (
+              <form onSubmit={enterSpeaker} className="space-y-3">
+                <label htmlFor="public-speaker-code" className="block text-sm font-bold text-slate-200">کد چهارحرفی/رقمی سخنران</label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    id="public-speaker-code"
+                    value={speakerCode}
+                    onChange={(event) => setSpeakerCode(event.currentTarget.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4))}
+                    inputMode="text"
+                    autoComplete="one-time-code"
+                    maxLength={4}
+                    required
+                    dir="ltr"
+                    aria-label="کد چهارکاراکتری سخنران"
+                    className="flex-1 px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-center tracking-[0.4em] font-black text-xl focus:outline-none focus:border-blue-500"
+                    placeholder="AB23"
+                  />
+                  <button disabled={speakerBusy || speakerCode.length !== 4} className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold">
+                    {speakerBusy ? 'در حال بررسی…' : 'ورود'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">کد را از مالک اتاق دریافت کنید. ورود، این دستگاه را برای همان کد فعال می‌کند و دستگاه قبلی را خارج می‌سازد.</p>
+                <button type="button" onClick={() => { setSpeakerChoice(null); setSpeakerError(''); }} className="text-xs text-slate-400 hover:text-white font-bold">
+                  بازگشت به انتخاب نقش
+                </button>
+              </form>
+            )}
+
+            {speakerSession && speakerChoice === 'speaker' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-900 border border-slate-800 p-4">
+                  <div>
+                    <p className="font-bold text-white">{speakerSession.name}</p>
+                    <p className={`mt-1 text-xs font-bold ${speakerStatus === 'ready' ? 'text-emerald-400' : speakerStatus === 'connected' ? 'text-amber-300' : 'text-slate-500'}`}>
+                      {speakerStatus === 'ready' ? 'آماده؛ میکروفون این دستگاه فعال است' : speakerStatus === 'connected' ? 'متصل؛ برای آماده‌شدن میکروفون را فعال کنید' : 'آفلاین'}
+                    </p>
+                  </div>
+                  <button type="button" disabled={speakerBusy} onClick={enableSpeakerMicrophone} className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold">
+                    {speakerBusy ? 'در حال بررسی…' : microphoneReady ? 'بررسی دوبارهٔ میکروفون' : 'فعال‌سازی میکروفون'}
+                  </button>
+                </div>
+
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-xs text-slate-300 leading-6">
+                  {state.current_speaker?.id === speakerSession.speakerId && state.running
+                    ? 'نوبت شما فعال است؛ ضبط صدا از همین دستگاه و ارسال تکه‌ای آغاز می‌شود.'
+                    : 'تا وقتی مالک تایمر را برای شما فعال نکند، صدایی ضبط نمی‌شود. برای ضبط، این صفحه را باز نگه دارید و دسترسی میکروفون را مجاز کنید.'}
+                  <p className="mt-1 text-[11px] text-slate-500">هشدار صدا/لرزش و اعلان پس‌زمینه به پشتیبانی و مجوزهای مرورگر و دستگاه وابسته‌اند؛ پس از بستن صفحه یا قفل‌شدن گوشی تضمین نمی‌شوند.</p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={notificationPermission === 'unsupported' || notificationPermission === 'granted' || notificationPermission === 'denied'} onClick={requestBrowserNotifications} className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-bold">
+                    {notificationPermission === 'granted' ? 'اعلان مرورگر فعال است' : notificationPermission === 'denied' ? 'اعلان در تنظیمات مرورگر مسدود است' : notificationPermission === 'unsupported' ? 'اعلان مرورگر پشتیبانی نمی‌شود' : 'فعال‌کردن اعلان پس‌زمینه'}
+                  </button>
+                  <button type="button" disabled={speakerBusy} onClick={leaveSpeaker} className="px-3 py-2 rounded-xl bg-red-950/60 hover:bg-red-900 border border-red-900/60 text-red-200 text-xs font-bold">
+                    خروج از حالت سخنران
+                  </button>
+                </div>
+
+                {state.speaker_uploads_enabled && (
+                  <div className="border-t border-slate-800 pt-4 space-y-2">
+                    <label htmlFor="speaker-file-upload" className="block text-sm font-bold text-slate-200">ارسال فایل برای بررسی مالک</label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input id="speaker-file-upload" type="file" onChange={(event) => setSpeakerUploadFile(event.currentTarget.files?.[0] || null)} className="flex-1 min-w-0 text-xs text-slate-300 file:mr-2 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-slate-800 file:text-slate-200" />
+                      <button type="button" disabled={!speakerUploadFile || uploadingSpeakerFile} onClick={uploadSpeakerFile} className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-bold">
+                        {uploadingSpeakerFile ? 'در حال ارسال…' : 'ارسال برای تأیید'}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500">فایل تا تأیید مالک خصوصی می‌ماند و برای تماشاگران نمایش داده نمی‌شود.</p>
+                    {speakerUploadMessage && <p role="status" className="text-xs text-emerald-300">{speakerUploadMessage}</p>}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {speakerError && <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{speakerError}</p>}
+          </section>
+        )}
+
         {/* اگر فایلی برای نمایش زنده باز شده باشد، پنل نمایش درون‌صفحه‌ای ظاهر می‌شود */}
         {activeInlineFile && (
           <div className="w-full bg-slate-950 border border-slate-800 rounded-3xl p-4 sm:p-6 text-right space-y-4 shadow-2xl transition-all">
@@ -245,6 +725,7 @@ export const PublicRoomPage: React.FC = () => {
                 <iframe
                   src={`/api/public/${token}/files/${activeInlineFile.id}`}
                   title={activeInlineFile.filename}
+                  sandbox="allow-same-origin"
                   className="w-full h-full border-0"
                 />
               ) : (

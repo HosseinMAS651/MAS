@@ -4,8 +4,9 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite"
+    "build": "npm run typecheck && vite build",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "qrcode": "1.5.4",
@@ -23,6 +24,6 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "5.6.3",
-    "vite": "5.4.11"
+    "vite": "^5.4.21"
   }
 }
