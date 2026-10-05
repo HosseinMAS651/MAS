@@ -48,6 +48,16 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class IssueRecoveryCodeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class RecoverPasswordRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    recovery_code: str = Field(min_length=1, max_length=64)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UpdateProfileRequest(BaseModel):
     account_name: str = Field(default="", max_length=120)
     age: int | None = Field(default=None, ge=1, le=120)
@@ -82,3 +92,4 @@ class UserResponse(BaseModel):
     calendar: str
     storage_used_bytes: int
     created_at_ms: int
+    has_recovery_code: bool = False

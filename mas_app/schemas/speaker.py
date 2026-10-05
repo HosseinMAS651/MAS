@@ -11,7 +11,7 @@ class SpeakerUpdateRequest(BaseModel):
     name: str = Field(default="", max_length=120)
     gender: str = Field(default="")
     age: int | None = Field(default=None, ge=1, le=120)
-    description: str = Field(default="", max_length=4000)
+    description: str = Field(default="", max_length=20_000)
     speaking_seconds: int = Field(default=300, ge=10, le=86400)
 
     @field_validator("name", "description")
@@ -43,6 +43,12 @@ class SpeakerResponse(BaseModel):
     finished_at_ms: int
     elapsed_ms: int = 0
     overtime_ms: int = 0
+
+
+class OwnerSpeakerResponse(SpeakerResponse):
+    speaker_code: str | None = None
+    presence_status: str = "offline"
+    presence_last_seen_at_ms: int = 0
 
 
 class SpeakerReorderRequest(BaseModel):

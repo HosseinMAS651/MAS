@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import re
@@ -18,6 +19,7 @@ import unicodedata
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from cryptography.fernet import Fernet, InvalidToken
 
 from ..config import Settings
 
@@ -36,6 +38,12 @@ class SecurityManager:
             hash_len=32,
             salt_len=16,
         )
+        encryption_key = hmac.new(
+            settings.secret_key.encode("utf-8"),
+            b"mas-speaker-code-encryption-v1",
+            hashlib.sha256,
+        ).digest()
+        self._fernet = Fernet(base64.urlsafe_b64encode(encryption_key))
 
     # ── رمز عبور ─────────────────────────────────────────────
     def hash_password(self, password: str) -> str:
@@ -95,6 +103,19 @@ class SecurityManager:
             token.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
+
+    def encrypt_secret(self, value: str) -> str:
+        """رمزگذاری مقدار کوتاهی که باید بعداً فقط به مالک نمایش داده شود."""
+        return self._fernet.encrypt(value.encode("utf-8")).decode("ascii")
+
+    def decrypt_secret(self, encrypted: str) -> str:
+        try:
+            return self._fernet.decrypt(encrypted.encode("ascii")).decode("utf-8")
+        except (InvalidToken, UnicodeError, ValueError) as exc:
+            raise ValueError(
+                "The stored secret cannot be decrypted with the current MAS_SECRET_KEY; "
+                "keep that key stable or rotate the affected secret."
+            ) from exc
 
     def generate_csrf_token(self) -> str:
         """ساخت توکن CSRF تصادفی."""

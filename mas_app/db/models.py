@@ -92,6 +92,8 @@ class User(Base):
     storage_used_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     failed_login_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_until_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    #: هش HMAC کد بازیابی یک‌بارمصرف؛ کد خام هرگز ذخیره نمی‌شود.
+    recovery_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=utc_now_ms)
     updated_at_ms: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=utc_now_ms, onupdate=utc_now_ms
@@ -105,6 +107,10 @@ class User(Base):
     sessions: Mapped[list[AuthSession]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+
+    @property
+    def has_recovery_code(self) -> bool:
+        return bool(self.recovery_code_hash)
 
     def __repr__(self) -> str:  # pragma: no cover - فقط برای دیباگ
         return f"<User id={self.id} username={self.username!r} role={self.role}>"
@@ -173,6 +179,9 @@ class Room(Base):
     capacity: Mapped[int] = mapped_column(Integer, nullable=False)
     recording_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     live_files_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: حالت ورود سخنران با کد؛ ضبط از دستگاه همان سخنران انجام می‌شود.
+    speaker_mode_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    speaker_uploads_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     #: اتاق عمومی (تماشاگران بدون ورود) — ویژگی جدید.
     public_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -221,6 +230,7 @@ class Speaker(Base):
         CheckConstraint("age IS NULL OR (age >= 1 AND age <= 120)", name="age_range"),
         CheckConstraint(f"gender IN ({_quoted(GENDERS)})", name="gender_valid"),
         Index("ix_speakers_room_id_name", "room_id", "name"),
+        Index("uq_speaker_room_code_hash", "room_id", "speaker_code_hash", unique=True),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -235,6 +245,13 @@ class Speaker(Base):
     speaking_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
     is_finished: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     finished_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    #: HMAC برای جست‌وجوی کد و رمزگذاری جداگانه برای نمایش دوباره به مالک.
+    speaker_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    speaker_code_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    #: هش توکن نشست موقت دستگاه سخنران؛ با ورود دستگاه جدید جایگزین می‌شود.
+    speaker_session_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    presence_status: Mapped[str] = mapped_column(String(16), nullable=False, default="offline")
+    presence_last_seen_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=utc_now_ms)
     updated_at_ms: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=utc_now_ms, onupdate=utc_now_ms
@@ -288,6 +305,7 @@ class SpeechFile(Base):
     content_type: Mapped[str] = mapped_column(String(120), nullable=False, default="application/octet-stream")
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     upload_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    approval_status: Mapped[str] = mapped_column(String(16), nullable=False, default="approved")
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     #: نام سخنران در لحظهٔ ضبط (برای ضبط‌ها؛ حتی بعد از حذف سخنران باقی می‌ماند).
     speaker_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
@@ -385,8 +403,9 @@ class RecordingSession(Base):
         CheckConstraint("recorded_ms >= 0", name="recorded_ms_non_negative"),
         Index("ix_recording_sessions_room_status", "room_id", "status"),
         Index(
-            "uq_recording_sessions_one_active_per_room",
+            "uq_recording_sessions_one_active_per_room_speaker",
             "room_id",
+            "speaker_id",
             unique=True,
             sqlite_where=text("status IN ('recording', 'paused', 'finalizing')"),
             postgresql_where=text("status IN ('recording', 'paused', 'finalizing')"),

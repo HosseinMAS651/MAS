@@ -13,6 +13,8 @@ class PublicRoomStateResponse(BaseModel):
 
     room_name: str
     public_enabled: bool
+    speaker_mode_enabled: bool = False
+    speaker_uploads_enabled: bool = False
     running: bool
     awaiting_decision: bool
     current_index: int

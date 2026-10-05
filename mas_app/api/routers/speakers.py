@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...core.errors import NotFoundError
+from ...core.errors import NotFoundError, ValidationAppError
 from ...db.models import Speaker, User
 from ...schemas.speaker import (
     SpeakerReorderRequest,
@@ -26,6 +26,18 @@ from ..deps import (
 router = APIRouter(prefix="/api/rooms/{room_id}", tags=["speakers"])
 
 
+def _validate_speaker_text(payload: SpeakerUpdateRequest, room_service: object) -> None:
+    settings = room_service.settings
+    if len(payload.name.strip()) > settings.max_speaker_name_length:
+        raise ValidationAppError(
+            f"نام سخنران نمی‌تواند بیش از {settings.max_speaker_name_length} نویسه باشد."
+        )
+    if len(payload.description) > settings.max_description_length:
+        raise ValidationAppError(
+            f"توضیحات نمی‌تواند بیش از {settings.max_description_length} نویسه باشد."
+        )
+
+
 @router.post("/speakers")
 def add_speaker(
     room_id: int,
@@ -36,6 +48,7 @@ def add_speaker(
     speaker_service: Annotated[object, Depends(get_speaker_service)],
 ) -> dict:
     room = room_service.get_room_for_user(session, room_id, current_user)
+    _validate_speaker_text(payload, room_service)
     speaker = speaker_service.add_speaker(
         session,
         room,
@@ -45,6 +58,8 @@ def add_speaker(
         description=payload.description,
         speaking_seconds=payload.speaking_seconds,
     )
+    if room.speaker_mode_enabled:
+        room_service.ensure_speaker_code(session, room, speaker)
     return {"ok": True, "speaker": SpeakerResponse.model_validate(speaker)}
 
 
@@ -59,6 +74,7 @@ def update_speaker(
     speaker_service: Annotated[object, Depends(get_speaker_service)],
 ) -> dict:
     room = room_service.get_room_for_user(session, room_id, current_user)
+    _validate_speaker_text(payload, room_service)
     speaker = session.execute(
         select(Speaker).where(Speaker.id == speaker_id, Speaker.room_id == room.id)
     ).scalar_one_or_none()
@@ -111,6 +127,21 @@ def reorder_speakers(
     room = room_service.get_room_for_user(session, room_id, current_user)
     speaker_service.reorder_speakers(session, room, payload.speaker_ids)
     return {"ok": True, "message": "ترتیب سخنران‌ها به‌روزرسانی شد."}
+
+
+@router.post("/speakers/{speaker_id}/rotate-code")
+def rotate_speaker_code(
+    room_id: int,
+    speaker_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+) -> dict:
+    room = room_service.get_room_for_user(session, room_id, current_user)
+    if not room.speaker_mode_enabled:
+        raise ValidationAppError("ابتدا حالت سخنران را در تنظیمات اتاق فعال کنید.")
+    code = room_service.rotate_speaker_code(session, room, speaker_id)
+    return {"ok": True, "speaker_id": speaker_id, "speaker_code": code}
 
 
 @router.post("/speakers/{speaker_id}/unfreeze")
