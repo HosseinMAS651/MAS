@@ -1,12 +1,11 @@
 # تاریخچه تغییرات و نسخه‌ها (Changelog)
 
-## [2.0.3] - 2026-10-06
+## [2.0.4] - 2026-10-06
 
-### 🚀 اصلاح نهایی Deploy و migration
-- migration `0005` در برابر ستون‌ها و indexهای موجود از قبل idempotent شد.
-- خطای واقعی Alembic اکنون با traceback در لاگ ثبت می‌شود تا Render آن را به status 3 محدود نکند.
-- روی Render، `MAS_ENV=development` دیگر باعث اجرای محیط development نمی‌شود و به production تبدیل می‌شود.
-- Python نسخه `3.13.5` برای Native Render با `.python-version` مشخص شد.
+### 🚀 Render Free deployment
+- migrationها قابل اجرای build-time شدند تا شکست migration قبل از startup مشخص شود.
+- PostgreSQL indexهای migration 0005 با عملیات concurrent مقاوم‌تر شدند.
+- lock/statement timeout برای migration اضافه شد تا Deploy روی قفل دیتابیس نامحدود منتظر نماند.
 
 ## [2.0.0] - 2026-09-22
 

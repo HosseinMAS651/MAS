@@ -5,7 +5,7 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 from mas_app.db.base import Base
 from mas_app.db.models import ALL_TABLES  # noqa: F401
@@ -43,6 +43,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        if connection.dialect.name == "postgresql":
+            # Never let a deployment wait indefinitely for an old instance's DB lock.
+            connection.execute(text("SET lock_timeout = '8s'"))
+            connection.execute(text("SET statement_timeout = '120s'"))
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

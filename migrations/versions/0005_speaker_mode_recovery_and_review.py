@@ -37,67 +37,103 @@ def _add_column_if_missing(table: str, column: sa.Column) -> None:
         op.add_column(table, column)
 
 
+def _replace_recording_index() -> None:
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+
+    if dialect != "postgresql":
+        indexes = _existing_indexes("recording_sessions")
+        if "uq_recording_sessions_one_active_per_room" in indexes:
+            op.drop_index("uq_recording_sessions_one_active_per_room", table_name="recording_sessions")
+        if "uq_recording_sessions_one_active_per_room_speaker" not in _existing_indexes("recording_sessions"):
+            op.create_index(
+                "uq_recording_sessions_one_active_per_room_speaker",
+                "recording_sessions",
+                ["room_id", "speaker_id"],
+                unique=True,
+                sqlite_where=sa.text(ACTIVE_RECORDING_PREDICATE),
+            )
+        return
+
+    duplicate = bind.execute(
+        sa.text(
+            "SELECT 1 FROM recording_sessions "
+            "WHERE speaker_id IS NOT NULL AND status IN ('recording','paused','finalizing') "
+            "GROUP BY room_id, speaker_id HAVING COUNT(*) > 1 LIMIT 1"
+        )
+    ).scalar_one_or_none()
+
+    # PostgreSQL CREATE/DROP INDEX CONCURRENTLY must run outside a transaction.
+    # This reduces interference with the still-live previous Render instance.
+    with op.get_context().autocommit_block():
+        bind.execute(sa.text("DROP INDEX CONCURRENTLY IF EXISTS uq_recording_sessions_one_active_per_room"))
+        if duplicate is not None:
+            # Preserve every row. A unique index cannot represent existing duplicate
+            # active sessions, so keep the lookup index non-unique until those stale
+            # rows are explicitly reconciled. The application already serializes room writes.
+            bind.execute(
+                sa.text(
+                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
+                    "ix_recording_sessions_active_room_speaker "
+                    "ON recording_sessions (room_id, speaker_id) "
+                    "WHERE status IN ('recording','paused','finalizing')"
+                )
+            )
+        else:
+            bind.execute(
+                sa.text(
+                    "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
+                    "uq_recording_sessions_one_active_per_room_speaker "
+                    "ON recording_sessions (room_id, speaker_id) "
+                    "WHERE status IN ('recording','paused','finalizing')"
+                )
+            )
+
+
+def _ensure_speaker_code_index() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        if "uq_speaker_room_code_hash" not in _existing_indexes("speakers"):
+            op.create_index("uq_speaker_room_code_hash", "speakers", ["room_id", "speaker_code_hash"], unique=True)
+        return
+
+    duplicate = bind.execute(
+        sa.text(
+            "SELECT 1 FROM speakers "
+            "WHERE speaker_code_hash IS NOT NULL "
+            "GROUP BY room_id, speaker_code_hash HAVING COUNT(*) > 1 LIMIT 1"
+        )
+    ).scalar_one_or_none()
+
+    with op.get_context().autocommit_block():
+        if duplicate is None:
+            bind.execute(
+                sa.text(
+                    "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_speaker_room_code_hash "
+                    "ON speakers (room_id, speaker_code_hash)"
+                )
+            )
+        else:
+            bind.execute(
+                sa.text(
+                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_speaker_room_code_hash "
+                    "ON speakers (room_id, speaker_code_hash)"
+                )
+            )
+
+
 def upgrade() -> None:
-    # These checks make 0005 safe for Render databases that were partially
-    # repaired before the Alembic revision was recorded.
-    _add_column_if_missing(
-        "users",
-        sa.Column("recovery_code_hash", sa.String(length=64), nullable=True),
-    )
-    _add_column_if_missing(
-        "rooms",
-        sa.Column("speaker_mode_enabled", sa.Boolean(), server_default=sa.false(), nullable=False),
-    )
-    _add_column_if_missing(
-        "rooms",
-        sa.Column("speaker_uploads_enabled", sa.Boolean(), server_default=sa.false(), nullable=False),
-    )
-    _add_column_if_missing(
-        "speakers",
-        sa.Column("speaker_code_hash", sa.String(length=64), nullable=True),
-    )
-    _add_column_if_missing(
-        "speakers",
-        sa.Column("speaker_code_encrypted", sa.String(length=512), nullable=True),
-    )
-    _add_column_if_missing(
-        "speakers",
-        sa.Column("speaker_session_hash", sa.String(length=64), nullable=True),
-    )
-    _add_column_if_missing(
-        "speakers",
-        sa.Column("presence_status", sa.String(length=16), server_default="offline", nullable=False),
-    )
-    _add_column_if_missing(
-        "speakers",
-        sa.Column("presence_last_seen_at_ms", sa.BigInteger(), server_default="0", nullable=False),
-    )
-    _add_column_if_missing(
-        "speech_files",
-        sa.Column("approval_status", sa.String(length=16), server_default="approved", nullable=False),
-    )
-
-    recording_indexes = _existing_indexes("recording_sessions")
-    if "uq_recording_sessions_one_active_per_room" in recording_indexes:
-        op.drop_index("uq_recording_sessions_one_active_per_room", table_name="recording_sessions")
-
-    if "uq_recording_sessions_one_active_per_room_speaker" not in _existing_indexes("recording_sessions"):
-        op.create_index(
-            "uq_recording_sessions_one_active_per_room_speaker",
-            "recording_sessions",
-            ["room_id", "speaker_id"],
-            unique=True,
-            sqlite_where=sa.text(ACTIVE_RECORDING_PREDICATE),
-            postgresql_where=sa.text(ACTIVE_RECORDING_PREDICATE),
-        )
-
-    if "uq_speaker_room_code_hash" not in _existing_indexes("speakers"):
-        op.create_index(
-            "uq_speaker_room_code_hash",
-            "speakers",
-            ["room_id", "speaker_code_hash"],
-            unique=True,
-        )
+    _add_column_if_missing("users", sa.Column("recovery_code_hash", sa.String(length=64), nullable=True))
+    _add_column_if_missing("rooms", sa.Column("speaker_mode_enabled", sa.Boolean(), server_default=sa.false(), nullable=False))
+    _add_column_if_missing("rooms", sa.Column("speaker_uploads_enabled", sa.Boolean(), server_default=sa.false(), nullable=False))
+    _add_column_if_missing("speakers", sa.Column("speaker_code_hash", sa.String(length=64), nullable=True))
+    _add_column_if_missing("speakers", sa.Column("speaker_code_encrypted", sa.String(length=512), nullable=True))
+    _add_column_if_missing("speakers", sa.Column("speaker_session_hash", sa.String(length=64), nullable=True))
+    _add_column_if_missing("speakers", sa.Column("presence_status", sa.String(length=16), server_default="offline", nullable=False))
+    _add_column_if_missing("speakers", sa.Column("presence_last_seen_at_ms", sa.BigInteger(), server_default="0", nullable=False))
+    _add_column_if_missing("speech_files", sa.Column("approval_status", sa.String(length=16), server_default="approved", nullable=False))
+    _replace_recording_index()
+    _ensure_speaker_code_index()
 
 
 def downgrade() -> None:
