@@ -296,10 +296,18 @@ def run_database_migrations(db: Database, settings: Settings) -> None:
 
     if not tables:
         logger.info("fresh database: alembic upgrade head")
-        command.upgrade(_alembic_config(settings), "head")
+        try:
+            command.upgrade(_alembic_config(settings), "head")
+        except Exception as exc:
+            logger.exception("Alembic migration failed on fresh database: %s", exc)
+            raise
     elif alembic_tables:
         logger.info("versioned database: alembic upgrade head")
-        command.upgrade(_alembic_config(settings), "head")
+        try:
+            command.upgrade(_alembic_config(settings), "head")
+        except Exception as exc:
+            logger.exception("Alembic migration failed on versioned database: %s", exc)
+            raise
     elif "users" in tables:
         logger.info("legacy database detected; applying additive data-preserving migration")
         _legacy_add_columns(db)

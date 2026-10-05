@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
@@ -190,6 +191,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_environment_specific(self) -> Settings:
+        # A Render service is production infrastructure. If an old service-level
+        # MAS_ENV=development remains set, force production unless the deployment
+        # is explicitly not running on Render. This prevents insecure development
+        # defaults from surviving a service migration.
+        if os.getenv("RENDER", "").lower() == "true" and self.env == "development":
+            logger.warning("MAS_ENV=development روی Render نادیده گرفته شد؛ محیط production فعال شد.")
+            self.env = "production"
+
         production = self.env == "production"
 
         # ── کلید مخفی ──
