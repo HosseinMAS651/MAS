@@ -5,7 +5,7 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool, text
+from sqlalchemy import engine_from_config, pool
 
 from mas_app.db.base import Base
 from mas_app.db.models import ALL_TABLES  # noqa: F401
@@ -43,33 +43,14 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        # Render can briefly run more than one copy of a web process during a
-        # deploy. Serialize PostgreSQL Alembic upgrades so two processes cannot
-        # both observe the same old revision and race on CREATE/DROP operations.
-        migration_lock_key = 732847159
-        locked = False
-        if connection.dialect.name == "postgresql":
-            connection.execute(
-                text("SELECT pg_advisory_lock(:migration_lock_key)"),
-                {"migration_lock_key": migration_lock_key},
-            )
-            locked = True
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+        )
 
-        try:
-            context.configure(
-                connection=connection,
-                target_metadata=target_metadata,
-                render_as_batch=True,
-            )
-
-            with context.begin_transaction():
-                context.run_migrations()
-        finally:
-            if locked:
-                connection.execute(
-                    text("SELECT pg_advisory_unlock(:migration_lock_key)"),
-                    {"migration_lock_key": migration_lock_key},
-                )
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():

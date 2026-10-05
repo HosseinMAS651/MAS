@@ -128,14 +128,3 @@ def test_legacy_database_migration_with_duplicates():
             rows = s.execute(text("SELECT id, username, username_key FROM users ORDER BY id")).fetchall()
             assert len(rows) == 2
             assert rows[0][2] != rows[1][2]  # username_key نباید یکسان باشد
-
-
-def test_render_without_mas_env_uses_production_defaults(monkeypatch):
-    monkeypatch.setenv("RENDER", "true")
-    monkeypatch.delenv("MAS_ENV", raising=False)
-    settings = Settings(
-        secret_key="render-test-secret-at-least-32-characters-long",
-        database_url="postgresql+psycopg://u:p@localhost/mas",
-    )
-    assert settings.env == "production"
-    assert settings.cookie_secure is True

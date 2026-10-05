@@ -5,9 +5,8 @@ rooms, speakers, files, timers and recording chunks are retained unchanged.
 """
 from __future__ import annotations
 
-import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect
+import sqlalchemy as sa
 
 revision = "0005_speaker_mode_recovery_and_review"
 down_revision = "0004_legacy_auth_schema_compat"
@@ -19,34 +18,34 @@ ACTIVE_RECORDING_PREDICATE = "status IN ('recording', 'paused', 'finalizing')"
 
 def _existing_columns(table: str) -> set[str]:
     bind = op.get_bind()
-    inspector = inspect(bind)
+    inspector = sa.inspect(bind)
     if table not in inspector.get_table_names():
         return set()
     return {column["name"] for column in inspector.get_columns(table)}
 
 
+def _add_column_if_missing(table: str, column: sa.Column) -> None:
+    """Apply this migration safely to databases repaired before 0005 was run."""
+    if column.name not in _existing_columns(table):
+        op.add_column(table, column)
+
+
 def _existing_indexes(table: str) -> set[str]:
     bind = op.get_bind()
-    inspector = inspect(bind)
+    inspector = sa.inspect(bind)
     if table not in inspector.get_table_names():
         return set()
     return {index["name"] for index in inspector.get_indexes(table)}
 
 
-def _add_column_if_missing(table: str, column: sa.Column) -> None:
-    # Some older Render databases were repaired manually before this migration
-    # was deployed. Do not turn an already-present additive column into a fatal
-    # duplicate-column error.
-    if column.name not in _existing_columns(table):
-        op.add_column(table, column)
-
-
 def upgrade() -> None:
+    # Some earlier MAS deployments added these fields through the legacy
+    # compatibility path and then were brought back to Alembic revision 0004.
+    # Do not fail with duplicate-column errors in that case.
     _add_column_if_missing(
         "users",
         sa.Column("recovery_code_hash", sa.String(length=64), nullable=True),
     )
-
     _add_column_if_missing(
         "rooms",
         sa.Column("speaker_mode_enabled", sa.Boolean(), server_default=sa.false(), nullable=False),
@@ -55,7 +54,6 @@ def upgrade() -> None:
         "rooms",
         sa.Column("speaker_uploads_enabled", sa.Boolean(), server_default=sa.false(), nullable=False),
     )
-
     _add_column_if_missing(
         "speakers",
         sa.Column("speaker_code_hash", sa.String(length=64), nullable=True),
@@ -76,30 +74,19 @@ def upgrade() -> None:
         "speakers",
         sa.Column("presence_last_seen_at_ms", sa.BigInteger(), server_default="0", nullable=False),
     )
-
-    speaker_indexes = _existing_indexes("speakers")
-    if "uq_speaker_room_code_hash" not in speaker_indexes:
-        op.create_index(
-            "uq_speaker_room_code_hash",
-            "speakers",
-            ["room_id", "speaker_code_hash"],
-            unique=True,
-        )
-
     _add_column_if_missing(
         "speech_files",
         sa.Column("approval_status", sa.String(length=16), server_default="approved", nullable=False),
     )
 
-    # A paused recording for speaker A must not prevent recording speaker B.
-    # Existing installations could contain at most one active row per room, so
-    # replacing this index does not change any recording row or object in storage.
+    # The old guard blocked a paused recording in one speaker from allowing the
+    # next speaker to start. Remove it only when it exists, then install the
+    # speaker-scoped guard. No rows or stored files are modified.
     recording_indexes = _existing_indexes("recording_sessions")
     if "uq_recording_sessions_one_active_per_room" in recording_indexes:
         op.drop_index("uq_recording_sessions_one_active_per_room", table_name="recording_sessions")
-        recording_indexes.remove("uq_recording_sessions_one_active_per_room")
 
-    if "uq_recording_sessions_one_active_per_room_speaker" not in recording_indexes:
+    if "uq_recording_sessions_one_active_per_room_speaker" not in _existing_indexes("recording_sessions"):
         op.create_index(
             "uq_recording_sessions_one_active_per_room_speaker",
             "recording_sessions",
@@ -107,6 +94,16 @@ def upgrade() -> None:
             unique=True,
             sqlite_where=sa.text(ACTIVE_RECORDING_PREDICATE),
             postgresql_where=sa.text(ACTIVE_RECORDING_PREDICATE),
+        )
+
+    # Multiple NULL speaker_code_hash values are allowed by a normal UNIQUE
+    # index, while duplicate real hashes remain rejected.
+    if "uq_speaker_room_code_hash" not in _existing_indexes("speakers"):
+        op.create_index(
+            "uq_speaker_room_code_hash",
+            "speakers",
+            ["room_id", "speaker_code_hash"],
+            unique=True,
         )
 
 
