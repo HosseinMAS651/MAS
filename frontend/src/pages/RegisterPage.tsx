@@ -17,23 +17,58 @@ export const RegisterPage: React.FC = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await register({
+      const result = await register({
         ...form,
         age: form.age ? parseInt(form.age, 10) : null,
       });
-      navigate('/rooms');
+      setRecoveryCode(result.recoveryCode);
     } catch (err: any) {
       setError(err.message || 'خطا در ثبت‌نام. لطفاً اطلاعات را بررسی کنید.');
     } finally {
       setLoading(false);
     }
   };
+
+  const copyRecoveryCode = async () => {
+    try {
+      await navigator.clipboard.writeText(recoveryCode);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  if (recoveryCode) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-gradient-to-b from-blue-50/50 to-white dark:from-slate-950 dark:to-slate-900">
+        <div className="max-w-lg w-full bg-white dark:bg-slate-900 rounded-3xl border border-amber-200 dark:border-amber-900 p-8 space-y-5 text-center shadow-xl">
+          <div className="text-4xl">🔐</div>
+          <h2 className="text-2xl font-black text-gray-900 dark:text-white">کد بازیابی یک‌بارمصرف شما</h2>
+          <p className="text-sm text-gray-600 dark:text-slate-300 leading-7">
+            این کد را اکنون یادداشت و در جای امن نگه‌داری کنید. سامانه فقط هش آن را ذخیره می‌کند و دوباره قابل نمایش نیست؛
+            اگر آن را گم کنید، پس از ورود می‌توانید کد تازه بسازید.
+          </p>
+          <code dir="ltr" className="block rounded-2xl bg-gray-100 dark:bg-slate-800 px-4 py-5 text-xl sm:text-2xl font-black tracking-widest text-blue-700 dark:text-blue-300 select-all">
+            {recoveryCode}
+          </code>
+          <button type="button" onClick={copyRecoveryCode} className="px-4 py-2 rounded-xl border border-gray-200 dark:border-slate-700 text-sm font-bold text-gray-700 dark:text-slate-200">
+            {copied ? 'کپی شد ✓' : 'کپی کد'}
+          </button>
+          <button type="button" onClick={() => navigate('/rooms')} className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold">
+            کد را نگه داشتم؛ ورود به اتاق‌ها
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-gradient-to-b from-blue-50/50 to-white dark:from-slate-950 dark:to-slate-900 transition-colors">

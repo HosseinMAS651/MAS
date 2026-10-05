@@ -12,7 +12,11 @@ from ..core.security import SecurityManager
 from ..db.models import AuthSession
 
 SAFE_METHODS: Final = {"GET", "HEAD", "OPTIONS"}
-CSRF_EXEMPT_PATHS: Final = {"/api/auth/login", "/api/auth/register"}
+CSRF_EXEMPT_PATHS: Final = {
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/recover-password",
+}
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -39,7 +43,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         # A caller explicitly using a Bearer token is not exposed to cookie CSRF.
         authorization = request.headers.get("authorization", "")
-        if authorization.lower().startswith("bearer ") and not request.cookies.get(settings.cookie_name):
+        if authorization.lower().startswith("bearer "):
             return await call_next(request)
 
         csrf_token = request.headers.get("x-csrf-token", "").strip()

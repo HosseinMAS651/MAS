@@ -23,7 +23,7 @@ from reportlab.platypus import (
 )
 
 from ..core.timeutil import format_datetime_persian
-from ..db.models import Room, SpeechFile
+from ..db.models import Room
 
 # ثبت قلم وزیرمتن
 FONT_DIR = Path(__file__).resolve().parent.parent / "resources" / "fonts"
@@ -84,6 +84,8 @@ class PdfReportService:
         room: Room,
         audit_events: list[dict[str, Any]],
         reaction_counts: dict[str, int],
+        *,
+        include_files: bool = True,
     ) -> bytes:
         font_name = _ensure_font_registered()
         buffer = io.BytesIO()
@@ -184,14 +186,18 @@ class PdfReportService:
             else "بر اساس سن"
         )
 
+        owner_name = room.owner.account_name or room.owner.username if room.owner else "—"
         meta_data = [
             [
                 Paragraph(fa(f"حالت زمان‌بندی: {timing_mode_fa}"), cell_style),
-                Paragraph(fa(f"مالک اتاق: {room.owner.account_name or room.owner.username if room.owner else '—'}"), cell_style),
+                Paragraph(fa(f"مالک اتاق: {owner_name}"), cell_style),
             ],
             [
                 Paragraph(fa(f"ترتیب سخنرانی: {order_mode_fa}"), cell_style),
-                Paragraph(fa(f"زمان پیش‌فرض: {room.global_seconds // 60} دقیقه ({room.global_seconds} ثانیه)"), cell_style),
+                Paragraph(
+                    fa(f"زمان پیش‌فرض: {room.global_seconds // 60} دقیقه ({room.global_seconds} ثانیه)"),
+                    cell_style,
+                ),
             ],
             [
                 Paragraph(fa(f"سخنرانان خاتمه‌یافته: {finished_speakers} از {named_speakers}"), cell_style),
@@ -291,7 +297,12 @@ class PdfReportService:
             story.append(Spacer(1, 16))
 
         # ۵. فایل‌های پیوست و مستندات اتاق
-        files = [f for f in room.files if f.upload_type in ["common", "speaker"]]
+        files = [
+            f for f in room.files
+            if include_files
+            and f.upload_type in ["common", "speaker"]
+            and getattr(f, "approval_status", "approved") == "approved"
+        ]
         if files:
             story.append(Paragraph(fa("فایل‌های پیوست و ارائه‌ها"), section_heading))
             story.append(Spacer(1, 6))
@@ -367,7 +378,12 @@ class PdfReportService:
 
         # پانویس گزارش
         story.append(HRFlowable(width="100%", thickness=0.5, color=c_border, spaceBefore=8, spaceAfter=8))
-        story.append(Paragraph(fa("این سند به صورت خودکار توسط سامانه مدیریت زمان مـاس (MAS) تولید شده و معتبر است."), subtitle_style))
+        story.append(
+            Paragraph(
+                fa("این سند به صورت خودکار توسط سامانه مدیریت زمان مـاس (MAS) تولید شده و معتبر است."),
+                subtitle_style,
+            )
+        )
 
         doc.build(story)
         return buffer.getvalue()

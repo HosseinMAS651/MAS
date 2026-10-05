@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import getpass
 
+from sqlalchemy import select
+
 from mas_app.config import get_settings
 from mas_app.core.security import SecurityManager, normalize_username, username_to_key
-from mas_app.db.session import Database
 from mas_app.db.migrator import run_database_migrations
 from mas_app.db.models import User
-from sqlalchemy import select
+from mas_app.db.session import Database
 
 
 def main() -> None:
@@ -22,7 +23,9 @@ def main() -> None:
             raise SystemExit("Password must be at least 8 characters.")
         security = SecurityManager(settings)
         with database.session() as session:
-            user = session.execute(select(User).where(User.username_key == username_to_key(username))).scalar_one_or_none()
+            user = session.execute(
+                select(User).where(User.username_key == username_to_key(username))
+            ).scalar_one_or_none()
             if user is None:
                 raise SystemExit("User does not exist; register the account first, then rerun this tool.")
             user.role = "admin"

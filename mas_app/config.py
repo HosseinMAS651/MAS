@@ -105,8 +105,8 @@ class Settings(BaseSettings):
     max_rooms_per_user: int = Field(default=50, ge=1, le=10_000)
     min_room_capacity: int = Field(default=1, ge=1, le=100)
     max_room_capacity: int = Field(default=100, ge=1, le=1_000)
-    max_speaker_name_length: int = Field(default=120, ge=1, le=200)
-    max_room_name_length: int = Field(default=160, ge=1, le=200)
+    max_speaker_name_length: int = Field(default=120, ge=1, le=120)
+    max_room_name_length: int = Field(default=160, ge=1, le=160)
     max_description_length: int = Field(default=4_000, ge=0, le=20_000)
     allowed_upload_extensions: str = DEFAULT_ALLOWED_EXTENSIONS
 
@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     max_recording_minutes: int = Field(default=180, ge=1, le=1_440)
     recording_bitrate_kbps: int = Field(default=32, ge=8, le=512)
     recording_chunk_seconds: int = Field(default=5, ge=1, le=60)
+    max_recording_chunk_mb: int = Field(default=1, ge=1, le=64)
     recording_abandon_minutes: int = Field(default=30, ge=1, le=10_080)
     recording_max_chunks: int = Field(default=40_000, ge=10, le=1_000_000)
 
@@ -134,9 +135,15 @@ class Settings(BaseSettings):
     login_window_seconds: int = Field(default=600, ge=10, le=86_400)
     register_max_per_ip: int = Field(default=20, ge=1, le=10_000)
     register_window_seconds: int = Field(default=3_600, ge=10, le=604_800)
-    public_max_per_ip: int = Field(default=600, ge=10, le=1_000_000)
+    public_max_per_ip: int = Field(default=3_000, ge=10, le=1_000_000)
     public_window_seconds: int = Field(default=60, ge=10, le=86_400)
     api_max_per_minute: int = Field(default=600, ge=10, le=1_000_000)
+    reaction_max_per_minute: int = Field(default=10, ge=1, le=10_000)
+    reaction_poll_max_per_minute: int = Field(default=120, ge=10, le=10_000)
+    recovery_max_attempts: int = Field(default=10, ge=1, le=1_000)
+    recovery_window_seconds: int = Field(default=600, ge=10, le=86_400)
+    speaker_code_max_attempts: int = Field(default=10, ge=1, le=1_000)
+    speaker_code_window_seconds: int = Field(default=600, ge=10, le=86_400)
 
     # ── اتاق عمومی ───────────────────────────────────────────
     public_state_max_age_seconds: int = Field(default=2, ge=1, le=60)
@@ -286,6 +293,10 @@ class Settings(BaseSettings):
     def max_recording_bytes(self) -> int:
         """سقف تقریبی بایت برای یک ضبط، بر اساس بیت‌ریت و سقف مدت."""
         return int(self.recording_bitrate_kbps * 1000 / 8 * self.max_recording_seconds) + 65_536
+
+    @property
+    def max_recording_chunk_bytes(self) -> int:
+        return self.max_recording_chunk_mb * 1024 * 1024
 
     @property
     def allowed_extensions(self) -> frozenset[str]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +27,8 @@ from .audit import log_event
 from .rate_limiter import RateLimiter
 
 logger = logging.getLogger("mas.auth")
+RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+RECOVERY_CODE_LENGTH = 20
 
 
 class AuthService:
@@ -120,6 +123,100 @@ class AuthService:
             target_type="user",
             target_id=str(user.id),
             detail={"role": role, "username": user.username},
+            ip=ip,
+            user_agent=user_agent,
+        )
+        return user
+
+    def issue_recovery_code(
+        self,
+        session: Session,
+        user: User,
+        *,
+        current_password: str | None = None,
+        ip: str = "",
+        user_agent: str = "",
+    ) -> str:
+        """Issue a human-readable one-time recovery code; persist only its HMAC."""
+        if current_password is not None:
+            valid, _ = self.security.verify_password(current_password, user.password_hash)
+            if not valid:
+                raise ValidationAppError("رمز عبور فعلی نادرست است.")
+
+        raw_code = "".join(secrets.choice(RECOVERY_CODE_ALPHABET) for _ in range(RECOVERY_CODE_LENGTH))
+        display_code = "-".join(raw_code[index:index + 5] for index in range(0, RECOVERY_CODE_LENGTH, 5))
+        was_configured = bool(user.recovery_code_hash)
+        user.recovery_code_hash = self.security.hash_token(f"recovery-code:{raw_code}")
+        user.updated_at_ms = utc_now_ms()
+        session.flush()
+        log_event(
+            session,
+            action="recovery_code_issued",
+            actor_user_id=user.id,
+            actor_username=user.username,
+            severity="warning",
+            target_type="user",
+            target_id=str(user.id),
+            detail={"replaced_previous_code": was_configured},
+            ip=ip,
+            user_agent=user_agent,
+        )
+        return display_code
+
+    def reset_password_with_recovery_code(
+        self,
+        session: Session,
+        *,
+        username: str,
+        recovery_code: str,
+        new_password: str,
+        ip: str = "",
+        user_agent: str = "",
+    ) -> User:
+        if ip:
+            RateLimiter.check_and_increment(
+                session,
+                f"recovery:ip:{ip}",
+                action="password_recovery",
+                max_attempts=self.settings.recovery_max_attempts,
+                window_seconds=self.settings.recovery_window_seconds,
+            )
+
+        normalized_code = "".join(character for character in recovery_code.upper() if character not in "- ")
+        valid_format = (
+            len(normalized_code) == RECOVERY_CODE_LENGTH
+            and all(character in RECOVERY_CODE_ALPHABET for character in normalized_code)
+        )
+        candidate = self.security.hash_token(f"recovery-code:{normalized_code}")
+        u_key = username_to_key(username)
+        user = session.execute(
+            select(User).where(User.username_key == u_key)
+        ).scalar_one_or_none()
+        expected = user.recovery_code_hash if user and user.recovery_code_hash else self.security.hash_token(
+            "recovery-code:invalid-dummy-value"
+        )
+        matches = secrets.compare_digest(candidate, expected)
+        if not valid_format or not user or not user.is_active or not user.recovery_code_hash or not matches:
+            raise UnauthorizedError("نام کاربری یا کد بازیابی معتبر نیست.")
+
+        user.password_hash = self.security.hash_password(new_password)
+        user.recovery_code_hash = None
+        user.failed_login_count = 0
+        user.locked_until_ms = 0
+        user.updated_at_ms = utc_now_ms()
+        session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+        if ip:
+            RateLimiter.reset(session, f"recovery:ip:{ip}")
+        session.flush()
+        log_event(
+            session,
+            action="password_recovered",
+            actor_user_id=user.id,
+            actor_username=user.username,
+            severity="warning",
+            target_type="user",
+            target_id=str(user.id),
+            detail={"recovery_code_consumed": True, "sessions_invalidated": True},
             ip=ip,
             user_agent=user_agent,
         )

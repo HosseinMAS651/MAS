@@ -1,5 +1,7 @@
 """تست‌های تایمر اتاق پخش و شرط توقف خودکار با پایان یافتن زمان (درخواست کاربر)."""
 
+import io
+
 from fastapi.testclient import TestClient
 
 
@@ -41,6 +43,105 @@ def test_timer_basic_actions(client: TestClient):
     res_resume = client.post(f"/api/rooms/{room_id}/timer/action", json={"action": "resume"})
     assert res_resume.status_code == 200
     assert res_resume.json()["state"]["running"] is True
+
+
+def test_renaming_current_speaker_keeps_live_timer_in_room_details(client: TestClient, db_session):
+    from sqlalchemy import select
+
+    from mas_app.core.timeutil import utc_now_ms
+    from mas_app.db.models import RoomState
+
+    room_id = _setup_timer_room(client, "timer_rename_live")
+    room_detail = client.get(f"/api/rooms/{room_id}").json()["room"]
+    current_speaker = room_detail["speakers"][0]
+    started = client.post(f"/api/rooms/{room_id}/timer/action", json={"action": "start"})
+    assert started.status_code == 200
+
+    state = db_session.execute(select(RoomState).where(RoomState.room_id == room_id)).scalar_one()
+    state.started_at_ms = utc_now_ms() - 5_000
+    db_session.commit()
+
+    renamed = client.put(
+        f"/api/rooms/{room_id}/speakers/{current_speaker['id']}",
+        json={"name": "نام ویرایش‌شده", "speaking_seconds": 10},
+    )
+    assert renamed.status_code == 200
+    detail_after_rename = client.get(f"/api/rooms/{room_id}").json()["room"]
+    speaker_after_rename = detail_after_rename["speakers"][0]
+    assert speaker_after_rename["name"] == "نام ویرایششده"
+    assert speaker_after_rename["elapsed_ms"] >= 5_000
+
+    timer_state = client.get(f"/api/rooms/{room_id}/timer/state").json()["state"]
+    assert timer_state["running"] is True
+    assert timer_state["elapsed_ms"] >= 5_000
+
+
+def test_goto_same_speaker_is_noop_and_next_speaker_can_record(client: TestClient, db_session):
+    from sqlalchemy import select
+
+    from mas_app.core.timeutil import utc_now_ms
+    from mas_app.db.models import RecordingSession, RoomState
+
+    client.post(
+        "/api/auth/register",
+        json={"username": "timer_recording_switch", "password": "password1234"},
+    )
+    created = client.post(
+        "/api/rooms",
+        json={"name": "اتاق جابه‌جایی ضبط", "capacity": 2, "speaker_mode_enabled": True},
+    )
+    room_id = created.json()["room"]["id"]
+    speakers = client.get(f"/api/rooms/{room_id}").json()["room"]["speakers"]
+    first_speaker_id, second_speaker_id = [speaker["id"] for speaker in speakers]
+
+    started = client.post(f"/api/rooms/{room_id}/timer/action", json={"action": "start"})
+    assert started.status_code == 200
+    recording_status = client.get(f"/api/rooms/{room_id}/recording/status").json()
+    first_session_id = recording_status["session"]["session_id"]
+    chunk = client.post(
+        f"/api/rooms/{room_id}/recording/chunk",
+        data={"session_id": first_session_id, "seq": 0},
+        files={"chunk": ("first.webm", io.BytesIO(b"first-speaker-audio"), "audio/webm")},
+    )
+    assert chunk.status_code == 200
+
+    state = db_session.execute(select(RoomState).where(RoomState.room_id == room_id)).scalar_one()
+    state.started_at_ms = utc_now_ms() - 5_000
+    db_session.commit()
+
+    same_speaker = client.post(
+        f"/api/rooms/{room_id}/timer/action",
+        json={"action": "goto", "speaker_id": first_speaker_id},
+    )
+    assert same_speaker.status_code == 200
+    assert same_speaker.json()["state"]["running"] is True
+    assert same_speaker.json()["state"]["elapsed_ms"] >= 5_000
+    with client.app.state.database.session() as session:
+        first_session = session.get(RecordingSession, first_session_id)
+        assert first_session.status == "recording"
+
+    switched = client.post(
+        f"/api/rooms/{room_id}/timer/action",
+        json={"action": "goto", "speaker_id": second_speaker_id},
+    )
+    assert switched.status_code == 200
+    with client.app.state.database.session() as session:
+        first_session = session.get(RecordingSession, first_session_id)
+        assert first_session.status == "paused"
+
+    resumed_for_second = client.post(
+        f"/api/rooms/{room_id}/timer/action", json={"action": "start"}
+    )
+    assert resumed_for_second.status_code == 200
+    with client.app.state.database.session() as session:
+        second_session = session.execute(
+            select(RecordingSession).where(
+                RecordingSession.room_id == room_id,
+                RecordingSession.speaker_id == second_speaker_id,
+            )
+        ).scalar_one()
+        assert second_session.status == "recording"
+        assert second_session.id != first_session_id
 
 
 def test_timer_automatic_stop_on_time_up_and_overtime(client: TestClient, db_session):

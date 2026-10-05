@@ -13,24 +13,27 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
+from .api.csrf import CSRFMiddleware
 from .api.routers.admin import router as admin_router
 from .api.routers.auth import router as auth_router
 from .api.routers.health import router as health_router
 from .api.routers.public import router as public_router
 from .api.routers.recording import router as recording_router
 from .api.routers.rooms import router as rooms_router
+from .api.routers.speaker_access import router as speaker_access_router
 from .api.routers.speakers import router as speakers_router
 from .api.routers.timer import router as timer_router
-from .api.csrf import CSRFMiddleware
 from .config import Settings, get_settings
-from .core.errors import AppError
+from .core.errors import AppError, RateLimitExceededError
+from .core.security import SecurityManager
 from .db.migrator import run_database_migrations
 from .db.session import Database
 from .services.cleanup_service import CleanupService
+from .services.rate_limiter import RateLimiter
 from .storage.factory import create_storage
 
 logger = logging.getLogger("mas")
@@ -41,6 +44,57 @@ FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 def path_is_public_file(path: str) -> bool:
     parts = path.strip("/").split("/")
     return len(parts) == 5 and parts[0] == "api" and parts[1] == "public" and parts[3] == "files"
+
+
+class ApiRateLimitMiddleware(BaseHTTPMiddleware):
+    """Apply the configured per-IP API ceiling to non-public API routes."""
+
+    def __init__(self, app: object, settings: Settings) -> None:
+        super().__init__(app)  # type: ignore[arg-type]
+        self.settings = settings
+
+    async def dispatch(self, request: Request, call_next: object) -> Response:  # type: ignore[override]
+        path = request.url.path
+        if not path.startswith("/api/") or path.startswith("/api/public/"):
+            return await call_next(request)  # type: ignore[misc]
+        database = getattr(request.app.state, "database", None)
+        if database is None:
+            return await call_next(request)  # type: ignore[misc]
+
+        peer_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = SecurityManager(self.settings).extract_client_ip(dict(request.headers), peer_ip)
+        try:
+            with database.session() as session:
+                try:
+                    RateLimiter.check_and_increment(
+                        session,
+                        f"api:ip:{client_ip}",
+                        action="api_request",
+                        max_attempts=self.settings.api_max_per_minute,
+                        window_seconds=60,
+                    )
+                except RateLimitExceededError as exc:
+                    # Persist the blocked-until timestamp even though this request returns 429.
+                    session.commit()
+                    return JSONResponse(
+                        status_code=429,
+                        headers={"Retry-After": str(exc.retry_after_seconds)},
+                        content=exc.to_dict(),
+                    )
+        except Exception:
+            logger.exception("API rate limiter database failure")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "ok": False,
+                    "error": {
+                        "code": "RATE_LIMITER_UNAVAILABLE",
+                        "message": "کنترل نرخ درخواست موقتاً در دسترس نیست.",
+                        "details": {},
+                    },
+                },
+            )
+        return await call_next(request)  # type: ignore[misc]
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -62,18 +116,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "microphone=(self), camera=(), geolocation=()"
 
-        # سیاست محتوای امن (CSP)
-        frame_ancestors = "'self'" if public_file_frame else "'none'"
-        csp = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob: https:; "
-            "media-src 'self' blob: https:; "
-            "connect-src 'self' blob: https:; "
-            "font-src 'self' data:; "
-            f"frame-ancestors {frame_ancestors};"
-        )
+        # Public uploads are always sandboxed in-document, without script execution.
+        # The app itself does not need inline scripts; keep its policy equally strict.
+        if public_file_frame:
+            csp = (
+                "default-src 'none'; "
+                "img-src 'self' data: blob:; "
+                "media-src 'self' blob:; "
+                "style-src 'unsafe-inline'; "
+                "frame-ancestors 'self'; sandbox"
+            )
+        else:
+            csp = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob: https:; "
+                "media-src 'self' blob: https:; "
+                "connect-src 'self' blob: https:; "
+                "font-src 'self' data:; "
+                "frame-ancestors 'none';"
+            )
         response.headers["Content-Security-Policy"] = csp
 
         if self.settings.is_production and self.settings.cookie_secure:
@@ -170,11 +233,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="2.0.0",
         docs_url="/docs" if current_settings.docs_enabled else None,
         redoc_url=None,
+        openapi_url="/openapi.json" if current_settings.docs_enabled else None,
         lifespan=lifespan,
     )
     app.state.settings = current_settings
 
     # میان‌افزارهای امنیتی
+    app.add_middleware(ApiRateLimitMiddleware, settings=current_settings)
     app.add_middleware(SecurityHeadersMiddleware, settings=current_settings)
     app.add_middleware(CSRFMiddleware)
     app.add_middleware(
@@ -194,9 +259,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        first_err = exc.errors()[0] if exc.errors() else {}
+        errors = exc.errors()
+        first_err = errors[0] if errors else {}
         loc = " -> ".join(str(x) for x in first_err.get("loc", []))
         msg = first_err.get("msg", "ورودی نامعتبر است.")
+        safe_errors = [
+            {
+                "type": str(error.get("type", "validation_error")),
+                "loc": [str(part) for part in error.get("loc", [])],
+                "msg": str(error.get("msg", "ورودی نامعتبر است.")),
+            }
+            for error in errors
+        ]
         return JSONResponse(
             status_code=400,
             content={
@@ -204,7 +278,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "error": {
                     "code": "VALIDATION_ERROR",
                     "message": f"اطلاعات ارسالی نامعتبر است: {msg}",
-                    "details": {"field": loc, "errors": exc.errors()},
+                    "details": {"field": loc, "errors": safe_errors},
                 },
             },
         )
@@ -252,7 +326,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "ok": False,
                 "error": {
                     "code": "DATABASE_UNAVAILABLE",
-                    "message": "دیتابیس سامانه در دسترس نیست یا هنوز آماده نشده است. لطفاً چند لحظه بعد دوباره تلاش کنید.",
+                    "message": (
+                        "دیتابیس سامانه در دسترس نیست یا هنوز آماده نشده است. "
+                        "لطفاً چند لحظه بعد دوباره تلاش کنید."
+                    ),
                     "details": {},
                 },
             },
@@ -296,6 +373,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(timer_router)
     app.include_router(recording_router)
     app.include_router(public_router)
+    app.include_router(speaker_access_router)
     app.include_router(admin_router)
 
     # سرویس‌دهی فرانت‌اند SPA (Assets و Fallback به index.html)

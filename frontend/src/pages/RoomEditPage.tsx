@@ -15,6 +15,8 @@ export const RoomEditPage: React.FC = () => {
     description: '',
     recording_enabled: false,
     live_files_enabled: false,
+    speaker_mode_enabled: false,
+    speaker_uploads_enabled: false,
     public_enabled: false,
     timing_mode: 'global',
     global_seconds: 300,
@@ -43,6 +45,8 @@ export const RoomEditPage: React.FC = () => {
           description: r.description,
           recording_enabled: r.recording_enabled,
           live_files_enabled: r.live_files_enabled,
+          speaker_mode_enabled: r.speaker_mode_enabled,
+          speaker_uploads_enabled: r.speaker_uploads_enabled,
           public_enabled: r.public_enabled,
           timing_mode: r.timing_mode,
           global_seconds: r.global_seconds,
@@ -128,13 +132,13 @@ export const RoomEditPage: React.FC = () => {
             <input
               type="number"
               min={1}
-              max={100}
+              max={1000}
               required
               value={form.capacity}
               onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value, 10) || 1 })}
               className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
             />
-            <span className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 block">حداقل ۱ و حداکثر ۱۰۰ نفر</span>
+            <span className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 block">حداقل ۱ و حداکثر ۱۰۰۰ نفر</span>
           </div>
 
           <div>
@@ -190,10 +194,38 @@ export const RoomEditPage: React.FC = () => {
             <input
               type="checkbox"
               checked={form.recording_enabled}
+              disabled={form.speaker_mode_enabled}
               onChange={(e) => setForm({ ...form, recording_enabled: e.target.checked })}
-              className="w-4 h-4 text-blue-600 rounded"
+              className="w-4 h-4 text-blue-600 rounded disabled:opacity-50"
             />
-            فعال بودن ضبط خودکار صدا در زمان حرکت تایمر
+            فعال بودن ضبط خودکار روی دستگاه مدیر
+          </label>
+          {form.speaker_mode_enabled && <p className="text-[11px] text-blue-600 dark:text-blue-400 pr-7">در حالت سخنران، ضبط از دستگاه خود سخنران و مستقل از این گزینه انجام می‌شود.</p>}
+
+          <label className="flex items-start gap-2.5 cursor-pointer text-sm font-bold text-gray-800 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={form.speaker_mode_enabled}
+              onChange={(e) => setForm({
+                ...form,
+                speaker_mode_enabled: e.target.checked,
+                recording_enabled: e.target.checked ? false : form.recording_enabled,
+              })}
+              className="mt-0.5 w-4 h-4 text-blue-600 rounded"
+            />
+            <span>فعال‌سازی حالت سخنران با کد چهارکاراکتری</span>
+          </label>
+          <p className="text-[11px] text-gray-500 dark:text-slate-400 pr-7">تماشاگر می‌تواند نقش سخنران را انتخاب کند، کد اختصاصی وارد کند و پس از اجازهٔ میکروفون هنگام نوبتش ضبط شود.</p>
+
+          <label className={`flex items-start gap-2.5 text-sm font-bold text-gray-800 dark:text-slate-200 ${form.speaker_mode_enabled ? 'cursor-pointer' : 'opacity-50'}`}>
+            <input
+              type="checkbox"
+              checked={form.speaker_uploads_enabled}
+              disabled={!form.speaker_mode_enabled}
+              onChange={(e) => setForm({ ...form, speaker_uploads_enabled: e.target.checked })}
+              className="mt-0.5 w-4 h-4 text-blue-600 rounded"
+            />
+            <span>اجازهٔ آپلود فایل توسط سخنران (با تأیید مالک پیش از نمایش)</span>
           </label>
 
           <label className="flex items-center gap-2.5 cursor-pointer text-sm font-bold text-gray-800 dark:text-slate-200">

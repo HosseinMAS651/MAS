@@ -6,15 +6,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..core.security import normalize_persian_text
 from .file import FileResponse
-from .speaker import SpeakerResponse
+from .speaker import OwnerSpeakerResponse
 
 
 class RoomCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
-    capacity: int = Field(default=10, ge=1, le=100)
-    description: str = Field(default="", max_length=4000)
+    capacity: int = Field(default=10, ge=1, le=1000)
+    description: str = Field(default="", max_length=20_000)
     recording_enabled: bool = False
     live_files_enabled: bool = False
+    speaker_mode_enabled: bool = False
+    speaker_uploads_enabled: bool = False
     timing_mode: str = Field(default="global")
     global_seconds: int = Field(default=300, ge=10, le=86400)
     order_mode: str = Field(default="manual")
@@ -42,6 +44,9 @@ class RoomCreateRequest(BaseModel):
 
 class RoomUpdateRequest(RoomCreateRequest):
     public_enabled: bool = False
+    # Optional on update to preserve settings for older API clients that omit them.
+    speaker_mode_enabled: bool | None = None
+    speaker_uploads_enabled: bool | None = None
     #: در صورت کاهش ظرفیت اگر سخنرانی حذف شود، این فلگ باید true باشد
     confirm_shrink: bool = False
 
@@ -55,6 +60,8 @@ class RoomSummaryResponse(BaseModel):
     capacity: int
     recording_enabled: bool
     live_files_enabled: bool
+    speaker_mode_enabled: bool = False
+    speaker_uploads_enabled: bool = False
     public_enabled: bool
     timing_mode: str
     global_seconds: int
@@ -67,6 +74,6 @@ class RoomSummaryResponse(BaseModel):
 
 class RoomDetailResponse(RoomSummaryResponse):
     public_token: str | None = None
-    speakers: list[SpeakerResponse] = []
+    speakers: list[OwnerSpeakerResponse] = []
     files: list[FileResponse] = []
     recordings: list[FileResponse] = []

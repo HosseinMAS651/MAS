@@ -6,7 +6,6 @@ from collections.abc import Generator
 from typing import Annotated
 
 from fastapi import Depends, Header, Request
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import Settings, get_settings
@@ -42,8 +41,12 @@ def get_security_manager(settings: Annotated[Settings, Depends(get_app_settings)
     return SecurityManager(settings)
 
 
-def get_storage_backend(settings: Annotated[Settings, Depends(get_app_settings)]) -> StorageBackend:
-    return create_storage(settings)
+def get_storage_backend(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> StorageBackend:
+    storage = getattr(request.app.state, "storage", None)
+    return storage if storage is not None else create_storage(settings)
 
 
 def get_client_ip(

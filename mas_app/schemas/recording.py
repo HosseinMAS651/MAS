@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class RecordingStartRequest(BaseModel):
+    mime_type: str = Field(default="audio/webm", max_length=80)
 
 
 class RecordingSessionStatusResponse(BaseModel):

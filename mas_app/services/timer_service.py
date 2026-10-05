@@ -30,17 +30,32 @@ class TimerService:
         return state
 
     def _lock_state(self, session: Session, room: Room) -> RoomState:
-        state = session.execute(select(RoomState).where(RoomState.room_id == room.id).with_for_update()).scalar_one_or_none()
+        state = session.execute(
+            select(RoomState).where(RoomState.room_id == room.id).with_for_update()
+        ).scalar_one_or_none()
         if state is None:
             state = self.ensure_room_state(session, room)
         return state
 
-    def ensure_speaker_timer(self, session: Session, room_id: int, speaker_id: int) -> SpeakerTimerState:
+    def ensure_speaker_timer(
+        self, session: Session, room_id: int, speaker_id: int
+    ) -> SpeakerTimerState:
         timer = session.execute(
-            select(SpeakerTimerState).where(SpeakerTimerState.room_id == room_id, SpeakerTimerState.speaker_id == speaker_id)
+            select(SpeakerTimerState).where(
+                SpeakerTimerState.room_id == room_id,
+                SpeakerTimerState.speaker_id == speaker_id,
+            )
         ).scalar_one_or_none()
         if timer is None:
-            timer = SpeakerTimerState(room_id=room_id, speaker_id=speaker_id, elapsed_ms=0, overtime_ms=0, started_at_ms=0, updated_at_ms=utc_now_ms(), version=1)
+            timer = SpeakerTimerState(
+                room_id=room_id,
+                speaker_id=speaker_id,
+                elapsed_ms=0,
+                overtime_ms=0,
+                started_at_ms=0,
+                updated_at_ms=utc_now_ms(),
+                version=1,
+            )
             session.add(timer)
             session.flush()
         return timer
@@ -48,7 +63,14 @@ class TimerService:
     def _speaker_limit_ms(self, room: Room, speaker: Speaker) -> int:
         return (speaker.speaking_seconds if room.timing_mode == "individual" else room.global_seconds) * 1000
 
-    def _sync_current_timer(self, session: Session, state: RoomState, room: Room, speaker: Speaker, now_ms: int) -> None:
+    def _sync_current_timer(
+        self,
+        session: Session,
+        state: RoomState,
+        room: Room,
+        speaker: Speaker,
+        now_ms: int,
+    ) -> None:
         if state.running and state.started_at_ms > 0:
             delta = non_negative_delta(state.started_at_ms, now_ms)
             if state.awaiting_decision:
@@ -69,6 +91,16 @@ class TimerService:
             if sp:
                 return sp
         return next((s for s in speakers if not s.is_finished), speakers[0] if speakers else None)
+
+    def _defer_speaker_recording_finish(self, session: Session, room: Room, speaker: Speaker) -> None:
+        """Pause non-empty speaker-device recordings; the device flushes and finalizes after handoff."""
+        rec = self.recording_service.get_active_session(session, room.id, speaker.id, lock=True)
+        if not rec:
+            return
+        if rec.bytes_received > 0 or rec.recorded_ms > 0:
+            self.recording_service.pause(session, room.id, speaker.id)
+        else:
+            self.recording_service.discard_recording_sync(session, rec)
 
     def get_snapshot(self, session: Session, room: Room, *, now_ms: int | None = None) -> dict:
         state = self.ensure_room_state(session, room)
@@ -108,14 +140,14 @@ class TimerService:
                         timer.started_at_ms = 0
                         timer.updated_at_ms = current_time
                         timer.version += 1
-                        if room.recording_enabled:
+                        if room.recording_enabled or room.speaker_mode_enabled:
                             self.recording_service.pause(session, room.id, current_sp.id)
                     session.flush()
                 else:
                     elapsed = potential_elapsed
 
         rec_status = "inactive"
-        if room.recording_enabled and current_sp:
+        if (room.recording_enabled or room.speaker_mode_enabled) and current_sp:
             rec = self.recording_service.get_active_session(session, room.id, current_sp.id)
             if rec:
                 rec_status = rec.status
@@ -140,12 +172,24 @@ class TimerService:
             "recording_status": rec_status,
         }
 
-    async def handle_action(self, session: Session, room: Room, action: str, *, speaker_id: int | None = None, expected_version: int | None = None) -> dict:
+    async def handle_action(
+        self,
+        session: Session,
+        room: Room,
+        action: str,
+        *,
+        speaker_id: int | None = None,
+        expected_version: int | None = None,
+    ) -> dict:
         state = self._lock_state(session, room)
         now_ms = utc_now_ms()
         self.get_snapshot(session, room, now_ms=now_ms)
         if expected_version is not None and state.version != expected_version:
-            raise ConflictError("وضعیت اتاق تغییر کرده است؛ لطفاً اطلاعات اتاق را تازه‌سازی کنید.", code="STATE_VERSION_CONFLICT", details={"current_version": state.version})
+            raise ConflictError(
+                "وضعیت اتاق تغییر کرده است؛ لطفاً اطلاعات اتاق را تازه‌سازی کنید.",
+                code="STATE_VERSION_CONFLICT",
+                details={"current_version": state.version},
+            )
 
         speakers = sorted(room.speakers, key=lambda s: s.order_index)
         current_sp = self._current_speaker(room, state)
@@ -166,7 +210,7 @@ class TimerService:
             state.started_at_ms = now_ms
             state.stop_reason = ""
             state.version += 1
-            if room.recording_enabled:
+            if room.recording_enabled or room.speaker_mode_enabled:
                 self.recording_service.start_or_resume(session, room, current_sp)
 
         elif action == "pause":
@@ -176,7 +220,7 @@ class TimerService:
                 state.started_at_ms = 0
                 state.stop_reason = "paused"
                 state.version += 1
-                if room.recording_enabled:
+                if room.recording_enabled or room.speaker_mode_enabled:
                     self.recording_service.pause(session, room.id, current_sp.id)
 
         elif action == "resume":
@@ -190,7 +234,7 @@ class TimerService:
             state.started_at_ms = now_ms
             state.stop_reason = ""
             state.version += 1
-            if room.recording_enabled:
+            if room.recording_enabled or room.speaker_mode_enabled:
                 self.recording_service.start_or_resume(session, room, current_sp)
 
         elif action == "continue_overtime":
@@ -205,7 +249,7 @@ class TimerService:
             state.started_at_ms = now_ms
             state.stop_reason = ""
             state.version += 1
-            if room.recording_enabled:
+            if room.recording_enabled or room.speaker_mode_enabled:
                 self.recording_service.start_or_resume(session, room, current_sp)
 
         elif action in ("finish", "finish_overtime"):
@@ -215,12 +259,17 @@ class TimerService:
             current_sp.is_finished = True
             current_sp.finished_at_ms = now_ms
             current_sp.updated_at_ms = now_ms
-            if room.recording_enabled:
+            if room.speaker_mode_enabled:
+                self._defer_speaker_recording_finish(session, room, current_sp)
+            elif room.recording_enabled:
                 rec = self.recording_service.get_active_session(session, room.id, current_sp.id, lock=True)
                 if rec:
                     await self.recording_service.finish_and_save(session, rec)
             remaining = [s for s in speakers if not s.is_finished and s.id != current_sp.id]
-            next_sp = next((s for s in remaining if s.order_index > current_sp.order_index), None) or (remaining[0] if remaining else None)
+            next_sp = next(
+                (speaker for speaker in remaining if speaker.order_index > current_sp.order_index),
+                None,
+            ) or (remaining[0] if remaining else None)
             if next_sp:
                 next_timer = self.ensure_speaker_timer(session, room.id, next_sp.id)
                 state.current_speaker_id = next_sp.id
@@ -240,7 +289,7 @@ class TimerService:
 
         elif action == "reset":
             if current_sp:
-                if room.recording_enabled:
+                if room.recording_enabled or room.speaker_mode_enabled:
                     rec = self.recording_service.get_active_session(session, room.id, current_sp.id, lock=True)
                     if rec:
                         self.recording_service.discard_recording_sync(session, rec)
@@ -262,10 +311,20 @@ class TimerService:
             target_sp = next((s for s in speakers if s.id == speaker_id), None)
             if not target_sp:
                 raise NotFoundError("سخنران مورد نظر یافت نشد.")
-            if current_sp and current_sp.id != target_sp.id:
+            if current_sp and current_sp.id == target_sp.id:
+                # Clicking the current speaker is intentionally a no-op: do not
+                # reset elapsed time or leave a server-side recording running.
+                return self.get_snapshot(session, room, now_ms=now_ms)
+            if current_sp:
                 self._sync_current_timer(session, state, room, current_sp, now_ms)
-                if room.recording_enabled:
-                    self.recording_service.pause(session, room.id, current_sp.id)
+                if room.speaker_mode_enabled:
+                    self._defer_speaker_recording_finish(session, room, current_sp)
+                elif room.recording_enabled:
+                    rec = self.recording_service.get_active_session(
+                        session, room.id, current_sp.id, lock=True
+                    )
+                    if rec:
+                        await self.recording_service.finish_and_save(session, rec)
             target_timer = self.ensure_speaker_timer(session, room.id, target_sp.id)
             state.current_speaker_id = target_sp.id
             state.current_index = speakers.index(target_sp)

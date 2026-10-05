@@ -7,22 +7,57 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
-from ...core.errors import NotFoundError, ValidationAppError
+from ...core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationAppError
 from ...db.models import User
 from ...schemas.file import FileResponse
 from ...schemas.recording import (
     RecordingChunkResponse,
     RecordingFinishRequest,
     RecordingSessionStatusResponse,
+    RecordingStartRequest,
 )
 from ..deps import (
     get_current_active_user,
     get_db,
     get_recording_service,
     get_room_service,
+    get_timer_service,
 )
 
 router = APIRouter(prefix="/api/rooms/{room_id}/recording", tags=["recording"])
+
+
+@router.post("/start")
+def start_recording(
+    room_id: int,
+    payload: RecordingStartRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[Session, Depends(get_db)],
+    room_service: Annotated[object, Depends(get_room_service)],
+    recording_service: Annotated[object, Depends(get_recording_service)],
+    timer_service: Annotated[object, Depends(get_timer_service)],
+) -> dict:
+    """Start/resume the owner-device recording after verifying the active timer."""
+    room = room_service.get_room_for_user(session, room_id, current_user)
+    if room.speaker_mode_enabled or not room.recording_enabled:
+        raise ForbiddenError("این اتاق ضبط را از دستگاه سخنران انجام می‌دهد، نه دستگاه مالک.")
+    snapshot = timer_service.get_snapshot(session, room)
+    speaker = snapshot.get("current_speaker")
+    if not snapshot.get("running") or not speaker:
+        raise ConflictError("ضبط فقط هنگام اجرای تایمر آغاز می‌شود.", code="TIMER_NOT_RUNNING")
+    recording = recording_service.start_or_resume(
+        session,
+        room,
+        speaker,
+        mime_type=payload.mime_type,
+    )
+    return {
+        "ok": True,
+        "session_id": recording.id,
+        "status": recording.status,
+        "mime_type": recording.mime_type,
+        "next_seq": recording.chunk_seq,
+    }
 
 
 @router.get("/status")
@@ -63,9 +98,11 @@ async def upload_recording_chunk(
     recording_service: Annotated[object, Depends(get_recording_service)],
 ) -> dict:
     room = room_service.get_room_for_user(session, room_id, current_user)
-    data = await chunk.read()
+    data = await chunk.read(recording_service.settings.max_recording_chunk_bytes + 1)
     if not data:
         raise ValidationAppError("تکهٔ ارسالی خالی است.")
+    if len(data) > recording_service.settings.max_recording_chunk_bytes:
+        raise ValidationAppError("اندازهٔ تکه از سقف مجاز بزرگ‌تر است.")
     chunk_obj = await recording_service.save_chunk(
         session, session_id, seq, data, room_id=room.id
     )

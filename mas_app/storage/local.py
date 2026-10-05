@@ -6,6 +6,7 @@ import hashlib
 import os
 import shutil
 from collections.abc import AsyncIterator, Iterator
+from contextlib import suppress
 from pathlib import Path
 
 from .base import StorageBackend
@@ -71,10 +72,8 @@ class LocalStorageBackend(StorageBackend):
             os.replace(tmp, path)
             return size, digest.hexdigest()
         except Exception:
-            try:
+            with suppress(OSError):
                 tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
             raise
 
     async def delete(self, key: str) -> None:
@@ -123,10 +122,8 @@ class LocalStorageBackend(StorageBackend):
             os.replace(tmp, target)
             return size, digest.hexdigest()
         except Exception:
-            try:
+            with suppress(OSError):
                 tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
             raise
 
     async def assemble_chunks(self, target_key: str, chunk_keys: list[str]) -> tuple[int, str]:

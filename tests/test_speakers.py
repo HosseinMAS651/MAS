@@ -50,6 +50,23 @@ def test_delete_speaker_empty_slot_collision_c01(client: TestClient):
     assert remaining[1]["name"] == "آقای پ"
 
 
+def test_reset_all_uses_the_first_manual_speaker_after_reorder(client: TestClient):
+    room_id = _setup_room(client, "reset_order_user")
+    speakers = client.get(f"/api/rooms/{room_id}").json()["room"]["speakers"]
+    ordered_ids = [speakers[2]["id"], speakers[0]["id"], speakers[1]["id"]]
+
+    reordered = client.post(
+        f"/api/rooms/{room_id}/speakers/reorder", json={"speaker_ids": ordered_ids}
+    )
+    assert reordered.status_code == 200
+    reset = client.post(f"/api/rooms/{room_id}/reset-all")
+    assert reset.status_code == 200
+
+    timer_state = client.get(f"/api/rooms/{room_id}/timer/state").json()["state"]
+    assert timer_state["current_speaker_id"] == ordered_ids[0]
+    assert timer_state["current_index"] == 0
+
+
 def test_unfreeze_and_reset_all_c05(client: TestClient):
     """بررسی رفع باگ C-05: امکان خروج سخنران از فریز و بازنشانی کلیه سخنرانان."""
     room_id = _setup_room(client, "user_c05")
