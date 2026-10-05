@@ -20,6 +20,7 @@ from ..db.models import (
     Speaker,
     SpeakerTimerState,
     SpeechFile,
+    User,
 )
 from .cleanup_queue import enqueue_cleanup
 
@@ -92,8 +93,9 @@ class SpeakerService:
         speaking_seconds: int | None = None,
     ) -> Speaker:
         room = session.execute(select(Room).where(Room.id == speaker.room_id).with_for_update()).scalar_one()
-        speaker = session.execute(select(Speaker).where(Speaker.id == speaker.id, Speaker.room_id == room.id)).scalar_one()
-        old_name = speaker.name
+        speaker = session.execute(
+            select(Speaker).where(Speaker.id == speaker.id, Speaker.room_id == room.id)
+        ).scalar_one()
         new_name = normalize_persian_text(name)
 
         speaker.name = new_name
@@ -104,17 +106,8 @@ class SpeakerService:
             speaker.speaking_seconds = speaking_seconds
         speaker.updated_at_ms = utc_now_ms()
 
-        # تغییر نام یعنی slot می‌تواند به شخص دیگری تخصیص یافته باشد؛ زمان و freeze قبلی نباید منتقل شود.
-        if old_name != new_name:
-            speaker.is_finished = False
-            speaker.finished_at_ms = 0
-            if speaker.timer:
-                speaker.timer.elapsed_ms = 0
-                speaker.timer.overtime_ms = 0
-                speaker.timer.started_at_ms = 0
-                speaker.timer.updated_at_ms = utc_now_ms()
-                speaker.timer.version += 1
-
+        # A name edit is not treated as replacing the speaker: preserve finished
+        # state and elapsed time so RoomState and per-speaker timer stay aligned.
         session.flush()
 
         # در صورت فعال بودن ترتیب الفبایی یا سنی، ترتیب به‌روزرسانی شود
@@ -122,6 +115,12 @@ class SpeakerService:
             from .room_service import RoomService
             RoomService.apply_room_speaker_order(session, room)
 
+        if room.state:
+            ordered = sorted(room.speakers, key=lambda item: item.order_index)
+            current = next((item for item in ordered if item.id == room.state.current_speaker_id), None)
+            room.state.current_index = ordered.index(current) if current else 0
+            room.state.version += 1
+            room.state.updated_at_ms = utc_now_ms()
         return speaker
 
     @staticmethod
@@ -150,9 +149,17 @@ class SpeakerService:
             select(RecordingSession).where(
                 RecordingSession.room_id == room.id,
                 RecordingSession.speaker_id == speaker.id,
-                RecordingSession.status.in_(["recording", "paused"]),
+                RecordingSession.status.in_(["recording", "paused", "finalizing"]),
             )
         ).scalar_one_or_none()
+
+        if active_rec and active_rec.status == "finalizing":
+            raise AppError(
+                "ضبط این سخنران در حال ذخیره‌سازی است؛ پس از پایان ذخیره دوباره تلاش کنید.",
+                code="RECORDING_FINALIZING",
+                details={"session_id": active_rec.id},
+                status_code=409,
+            )
 
         if active_rec and (active_rec.bytes_received > 0 or active_rec.recorded_ms > 0):
             if save_recording is None:
@@ -173,6 +180,10 @@ class SpeakerService:
                     await recording_service.finish_and_save(session, active_rec)
                 else:
                     recording_service.discard_recording_sync(session, active_rec)
+        elif active_rec and recording_service is not None:
+            # An empty session still holds the active-recording slot; discard it
+            # before deleting the speaker so it cannot block the next turn.
+            recording_service.discard_recording_sync(session, active_rec)
 
         # فایل‌های اختصاصی سخنران (غیر از ضبط‌ها) برای حذف صف‌بندی شوند
         sp_files = session.execute(
@@ -181,12 +192,16 @@ class SpeakerService:
                 SpeechFile.upload_type == "speaker",
             )
         ).scalars().all()
+        owner = session.execute(
+            select(User)
+            .where(User.id == room.owner_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
         for f in sp_files:
             room.storage_used_bytes = max(0, room.storage_used_bytes - f.size_bytes)
-            if room.owner:
-                room.owner.storage_used_bytes = max(
-                    0, room.owner.storage_used_bytes - f.size_bytes
-                )
+            if owner:
+                owner.storage_used_bytes = max(0, owner.storage_used_bytes - f.size_bytes)
             enqueue_cleanup(session, backend=f.backend, storage_key=f.storage_key, reason="speaker_deleted")
             session.delete(f)
 
@@ -221,7 +236,10 @@ class SpeakerService:
             speakers_now = list(remaining_speakers)
             current = next((sp for sp in speakers_now if sp.id == room.state.current_speaker_id), None)
             if current is None:
-                current = next((sp for sp in speakers_now if not sp.is_finished), speakers_now[0] if speakers_now else None)
+                current = next(
+                    (speaker for speaker in speakers_now if not speaker.is_finished),
+                    speakers_now[0] if speakers_now else None,
+                )
                 room.state.running = False
                 room.state.awaiting_decision = False
                 room.state.started_at_ms = 0
@@ -254,6 +272,15 @@ class SpeakerService:
             sp_map[sp_id].order_index = idx
         session.flush()
 
+        if room.state:
+            current_index = next(
+                (index for index, speaker_id in enumerate(speaker_ids) if speaker_id == room.state.current_speaker_id),
+                0,
+            )
+            room.state.current_index = current_index
+            room.state.version += 1
+            room.state.updated_at_ms = utc_now_ms()
+
     @staticmethod
     def unfreeze_speaker(session: Session, room: Room, speaker_id: int) -> Speaker:
         """خروج سخنران از حالت فریز (رفع باگ C-05)."""
@@ -284,7 +311,7 @@ class SpeakerService:
             for rec in active_recordings:
                 recording_service.discard_recording_sync(session, rec)
         speakers = session.execute(
-            select(Speaker).where(Speaker.room_id == room.id)
+            select(Speaker).where(Speaker.room_id == room.id).order_by(Speaker.order_index.asc())
         ).scalars().all()
         now_ms = utc_now_ms()
 

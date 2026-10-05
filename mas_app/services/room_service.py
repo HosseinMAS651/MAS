@@ -28,10 +28,10 @@ from ..core.errors import (
 from ..core.security import SecurityManager, normalize_persian_text, sanitize_filename
 from ..core.timeutil import utc_now_ms
 from ..db.models import (
+    RecordingChunk,
+    RecordingSession,
     Room,
     RoomState,
-    RecordingSession,
-    RecordingChunk,
     Speaker,
     SpeakerTimerState,
     SpeechFile,
@@ -40,6 +40,47 @@ from ..db.models import (
 from ..storage.base import StorageBackend
 from .audit import log_event
 from .cleanup_queue import enqueue_cleanup
+
+SPEAKER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+SAFE_MIME_BY_EXTENSION = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".csv": "text/csv; charset=utf-8",
+    ".rtf": "application/rtf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".weba": "audio/webm",
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".webm": "video/webm",
+    ".ogv": "video/ogg",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+}
 
 
 class _LimitedStream:
@@ -103,6 +144,85 @@ class RoomService:
         self.storage = storage
         self.security = security
 
+    def ensure_speaker_code(self, session: Session, room: Room, speaker: Speaker) -> str:
+        """Ensure one encrypted, unique four-character access code exists."""
+        if speaker.speaker_code_hash and speaker.speaker_code_encrypted:
+            return self.security.decrypt_secret(speaker.speaker_code_encrypted)
+
+        existing_hashes = set(
+            session.execute(
+                select(Speaker.speaker_code_hash).where(
+                    Speaker.room_id == room.id,
+                    Speaker.speaker_code_hash.is_not(None),
+                    Speaker.id != speaker.id,
+                )
+            ).scalars().all()
+        )
+        for _ in range(100):
+            code = "".join(secrets.choice(SPEAKER_CODE_ALPHABET) for _ in range(4))
+            digest = self.security.hash_token(f"speaker-code:{room.id}:{code}")
+            if digest not in existing_hashes:
+                speaker.speaker_code_hash = digest
+                speaker.speaker_code_encrypted = self.security.encrypt_secret(code)
+                return code
+        raise RuntimeError("Unable to generate a unique speaker access code for this room.")
+
+    def rotate_speaker_code(self, session: Session, room: Room, speaker_id: int) -> str:
+        room = self._lock_room(session, room.id)
+        speaker = session.execute(
+            select(Speaker).where(Speaker.id == speaker_id, Speaker.room_id == room.id).with_for_update()
+        ).scalar_one_or_none()
+        if not speaker:
+            raise NotFoundError("سخنران مورد نظر یافت نشد.")
+        active_recording = session.execute(
+            select(RecordingSession.id).where(
+                RecordingSession.room_id == room.id,
+                RecordingSession.speaker_id == speaker.id,
+                RecordingSession.status.in_(("recording", "paused", "finalizing")),
+            ).limit(1)
+        ).scalar_one_or_none()
+        if active_recording is not None:
+            raise AppError(
+                "تا پایان یا ذخیرهٔ ضبط فعال این سخنران، کد را نمی‌توان تعویض کرد.",
+                code="ACTIVE_RECORDING_BLOCKS_CODE_ROTATION",
+                status_code=409,
+            )
+        speaker.speaker_code_hash = None
+        speaker.speaker_code_encrypted = None
+        speaker.speaker_session_hash = None
+        speaker.presence_status = "offline"
+        speaker.presence_last_seen_at_ms = 0
+        code = self.ensure_speaker_code(session, room, speaker)
+        speaker.updated_at_ms = utc_now_ms()
+        session.flush()
+        return code
+
+    def speaker_code_for_owner(self, speaker: Speaker) -> str | None:
+        if not speaker.speaker_code_encrypted:
+            return None
+        return self.security.decrypt_secret(speaker.speaker_code_encrypted)
+
+    def expire_speaker_presence(self, session: Session, room: Room) -> None:
+        cutoff_ms = utc_now_ms() - 60_000
+        changed = False
+        for speaker in room.speakers:
+            if speaker.speaker_session_hash and speaker.presence_last_seen_at_ms <= cutoff_ms:
+                speaker.speaker_session_hash = None
+                speaker.presence_status = "offline"
+                changed = True
+        if changed:
+            session.flush()
+
+    def _validate_room_text(self, name: str, description: str) -> None:
+        if len((name or "").strip()) > self.settings.max_room_name_length:
+            raise ValidationAppError(
+                f"نام اتاق نمی‌تواند بیش از {self.settings.max_room_name_length} نویسه باشد."
+            )
+        if len(description or "") > self.settings.max_description_length:
+            raise ValidationAppError(
+                f"توضیحات نمی‌تواند بیش از {self.settings.max_description_length} نویسه باشد."
+            )
+
     def _lock_room(self, session: Session, room_id: int) -> Room:
         room = session.execute(
             select(Room).where(Room.id == room_id).with_for_update()
@@ -110,6 +230,15 @@ class RoomService:
         if not room:
             raise NotFoundError("اتاق مورد نظر یافت نشد.")
         return room
+
+    @staticmethod
+    def _lock_owner(session: Session, owner_id: int) -> User | None:
+        return session.execute(
+            select(User)
+            .where(User.id == owner_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
 
     def list_rooms_for_user(self, session: Session, user_id: int) -> list[Room]:
         return session.execute(
@@ -153,6 +282,8 @@ class RoomService:
         global_seconds: int = 300,
         order_mode: str = "manual",
         public_enabled: bool = False,
+        speaker_mode_enabled: bool = False,
+        speaker_uploads_enabled: bool = False,
         ip: str = "",
     ) -> Room:
         # بررسی سقف تعداد اتاق کاربر
@@ -167,7 +298,8 @@ class RoomService:
                 f"شما به سقف مجاز ساخت اتاق ({self.settings.max_rooms_per_user} اتاق) رسیده‌اید."
             )
 
-        capacity = max(1, min(self.settings.max_room_capacity, capacity))
+        capacity = max(self.settings.min_room_capacity, min(self.settings.max_room_capacity, capacity))
+        self._validate_room_text(name, description)
         now_ms = utc_now_ms()
 
         pub_token = self.security.generate_public_token() if public_enabled else None
@@ -177,8 +309,10 @@ class RoomService:
             name=normalize_persian_text(name),
             capacity=capacity,
             description=normalize_persian_text(description),
-            recording_enabled=recording_enabled,
+            recording_enabled=recording_enabled and not speaker_mode_enabled,
             live_files_enabled=live_files_enabled,
+            speaker_mode_enabled=speaker_mode_enabled,
+            speaker_uploads_enabled=speaker_mode_enabled and speaker_uploads_enabled,
             timing_mode=timing_mode if timing_mode in ["global", "individual"] else "global",
             global_seconds=max(10, min(86400, global_seconds)),
             order_mode=order_mode if order_mode in ["manual", "alpha", "age"] else "manual",
@@ -220,6 +354,10 @@ class RoomService:
                 version=1,
             )
             session.add(timer)
+
+        if room.speaker_mode_enabled:
+            for speaker in room.speakers:
+                self.ensure_speaker_code(session, room, speaker)
 
         # ایجاد ردیف اولیه RoomState
         first_sp = room.speakers[0] if room.speakers else None
@@ -265,11 +403,44 @@ class RoomService:
         global_seconds: int = 300,
         order_mode: str = "manual",
         public_enabled: bool = False,
+        speaker_mode_enabled: bool | None = None,
+        speaker_uploads_enabled: bool | None = None,
         confirm_shrink: bool = False,
         ip: str = "",
     ) -> Room:
         room = self._lock_room(session, room.id)
-        if not recording_enabled:
+        target_speaker_mode = (
+            room.speaker_mode_enabled if speaker_mode_enabled is None else speaker_mode_enabled
+        )
+        was_speaker_mode = room.speaker_mode_enabled
+        if not was_speaker_mode and target_speaker_mode:
+            active_recording = session.execute(
+                select(RecordingSession.id).where(
+                    RecordingSession.room_id == room.id,
+                    RecordingSession.status.in_(("recording", "paused", "finalizing")),
+                ).limit(1)
+            ).scalar_one_or_none()
+            if active_recording is not None:
+                raise AppError(
+                    "پیش از فعال‌کردن حالت سخنران، ضبط فعلی را پایان دهید یا ذخیره کنید.",
+                    code="ACTIVE_RECORDING_BLOCKS_SPEAKER_MODE",
+                    status_code=409,
+                )
+        if was_speaker_mode and not target_speaker_mode:
+            active_speaker_recording = session.execute(
+                select(RecordingSession.id).where(
+                    RecordingSession.room_id == room.id,
+                    RecordingSession.speaker_id.is_not(None),
+                    RecordingSession.status.in_(("recording", "paused", "finalizing")),
+                ).limit(1)
+            ).scalar_one_or_none()
+            if active_speaker_recording is not None:
+                raise AppError(
+                    "پیش از غیرفعال‌کردن حالت سخنران، ضبط‌های فعال/متوقف‌شدهٔ دستگاه‌ها را پایان دهید.",
+                    code="ACTIVE_SPEAKER_RECORDING_BLOCKS_DISABLE",
+                    status_code=409,
+                )
+        if not recording_enabled and not target_speaker_mode:
             active_recording = session.execute(
                 select(RecordingSession.id).where(
                     RecordingSession.room_id == room.id,
@@ -282,14 +453,28 @@ class RoomService:
                     code="ACTIVE_RECORDING_BLOCKS_DISABLE",
                     status_code=409,
                 )
+        self._validate_room_text(name, description)
         now_ms = utc_now_ms()
         room.name = normalize_persian_text(name)
         room.description = normalize_persian_text(description)
-        room.recording_enabled = recording_enabled
+        # Speaker mode always records on the speaker's own device; never start a
+        # second, competing capture on the owner's timer page.
+        room.recording_enabled = recording_enabled and not target_speaker_mode
         room.live_files_enabled = live_files_enabled
+        room.speaker_mode_enabled = target_speaker_mode
+        if speaker_uploads_enabled is not None:
+            room.speaker_uploads_enabled = speaker_uploads_enabled
         room.timing_mode = timing_mode if timing_mode in ["global", "individual"] else "global"
         room.global_seconds = max(10, min(86400, global_seconds))
         room.order_mode = order_mode if order_mode in ["manual", "alpha", "age"] else "manual"
+
+        if target_speaker_mode:
+            for speaker in room.speakers:
+                self.ensure_speaker_code(session, room, speaker)
+        elif was_speaker_mode:
+            for speaker in room.speakers:
+                speaker.speaker_session_hash = None
+                speaker.presence_status = "offline"
 
         # مدیریت لینک عمومی اتاق
         if public_enabled and not room.public_token:
@@ -334,14 +519,18 @@ class RoomService:
                     status_code=409,
                 )
 
+            # Lock the shared owner row before changing its cross-room quota counter.
+            locked_owner = self._lock_owner(session, room.owner_id)
             # در صورت تأیید، سخنران‌های اضافی حذف شوند
             for sp in speakers_to_truncate:
                 for f in sp.files:
                     if f.upload_type != "recording":
                         enqueue_cleanup(session, backend=f.backend, storage_key=f.storage_key, reason="capacity_shrink")
                         room.storage_used_bytes = max(0, room.storage_used_bytes - f.size_bytes)
-                        if room.owner:
-                            room.owner.storage_used_bytes = max(0, room.owner.storage_used_bytes - f.size_bytes)
+                        if locked_owner:
+                            locked_owner.storage_used_bytes = max(
+                                0, locked_owner.storage_used_bytes - f.size_bytes
+                            )
                 session.delete(sp)
             session.flush()
 
@@ -375,6 +564,8 @@ class RoomService:
                     version=1,
                 )
                 session.add(timer)
+                if target_speaker_mode:
+                    self.ensure_speaker_code(session, room, sp)
 
         room.capacity = target_capacity
 
@@ -386,7 +577,10 @@ class RoomService:
         if room.state:
             current = next((s for s in speakers_now if s.id == room.state.current_speaker_id), None)
             if current is None:
-                current = next((s for s in speakers_now if not s.is_finished), speakers_now[0] if speakers_now else None)
+                current = next(
+                    (speaker for speaker in speakers_now if not speaker.is_finished),
+                    speakers_now[0] if speakers_now else None,
+                )
                 room.state.current_speaker_id = current.id if current else None
                 room.state.current_index = speakers_now.index(current) if current else 0
                 room.state.running = False
@@ -449,8 +643,11 @@ class RoomService:
             for c in chunks:
                 enqueue_cleanup(session, backend=c.backend, storage_key=c.storage_key, reason="room_deleted")
 
-        if room.owner:
-            room.owner.storage_used_bytes = max(0, room.owner.storage_used_bytes - room.storage_used_bytes)
+        locked_owner = self._lock_owner(session, room.owner_id)
+        if locked_owner:
+            locked_owner.storage_used_bytes = max(
+                0, locked_owner.storage_used_bytes - room.storage_used_bytes
+            )
 
         log_event(
             session,
@@ -476,10 +673,15 @@ class RoomService:
         content_type: str,
         stream: AsyncIterator[bytes],
         speaker_id: int | None = None,
+        approval_status: str = "approved",
     ) -> SpeechFile:
         """آپلود فایل مشترک یا اختصاصی سخنران با رعایت دقیق سهمیه‌ها."""
         if upload_type not in ["common", "speaker"]:
             raise ValidationAppError("نوع آپلود نامعتبر است.")
+        if approval_status not in {"pending", "approved", "rejected"}:
+            raise ValidationAppError("وضعیت تأیید فایل نامعتبر است.")
+        if upload_type == "speaker" and speaker_id is None:
+            raise ValidationAppError("فایل اختصاصی باید به یک سخنران متصل باشد.")
 
         clean_filename = sanitize_filename(filename, fallback="file.bin")
         ext = "." + clean_filename.split(".")[-1].lower() if "." in clean_filename else ""
@@ -504,14 +706,38 @@ class RoomService:
 
         # قفل رکورد اتاق قبل از محاسبهٔ quota تا دو upload همزمان نتوانند از سقف عبور کنند.
         locked_room = self._lock_room(session, room.id)
-        owner = locked_room.owner
-        if locked_room.storage_used_bytes + size_bytes > self.settings.max_room_storage_bytes:
+        owner = self._lock_owner(session, locked_room.owner_id)
+        active_recording_statuses = ("recording", "paused", "finalizing")
+        room_reserved_bytes = session.execute(
+            select(func.coalesce(func.sum(RecordingSession.bytes_received), 0)).where(
+                RecordingSession.room_id == locked_room.id,
+                RecordingSession.status.in_(active_recording_statuses),
+            )
+        ).scalar_one()
+        if (
+            locked_room.storage_used_bytes + int(room_reserved_bytes) + size_bytes
+            > self.settings.max_room_storage_bytes
+        ):
             await self.storage.delete(safe_key)
-            raise QuotaExceededError("فضای ذخیره‌سازی اختصاص داده شده به این اتاق پر شده است.")
+            raise QuotaExceededError("فضای ذخیره‌سازی اختصاص داده شده به این اتاق برای این فایل کافی نیست.")
 
-        if owner and owner.storage_used_bytes + size_bytes > self.settings.max_user_storage_bytes:
+        owner_reserved_bytes = 0
+        if owner:
+            owner_reserved_bytes = session.execute(
+                select(func.coalesce(func.sum(RecordingSession.bytes_received), 0))
+                .join(Room, Room.id == RecordingSession.room_id)
+                .where(
+                    Room.owner_id == owner.id,
+                    RecordingSession.status.in_(active_recording_statuses),
+                )
+            ).scalar_one()
+        if (
+            owner
+            and owner.storage_used_bytes + int(owner_reserved_bytes) + size_bytes
+            > self.settings.max_user_storage_bytes
+        ):
             await self.storage.delete(safe_key)
-            raise QuotaExceededError("سقف کل فضای حساب کاربری شما تکمیل شده است.")
+            raise QuotaExceededError("سقف کل فضای حساب کاربری شما با احتساب ضبط‌های در حال دریافت کافی نیست.")
 
         available = self.storage.available_bytes()
         if available is not None and size_bytes > max(0, available - 64 * 1024 * 1024):
@@ -534,9 +760,11 @@ class RoomService:
             filename=clean_filename,
             storage_key=safe_key,
             backend=self.settings.storage_backend,
-            content_type=content_type or "application/octet-stream",
+            # Never trust multipart Content-Type: infer only a small safe allowlist.
+            content_type=SAFE_MIME_BY_EXTENSION.get(ext, "application/octet-stream"),
             size_bytes=size_bytes,
             upload_type=upload_type,
+            approval_status=approval_status,
             speaker_name=sp_name,
             sha256=sha256_hash,
             created_at_ms=now_ms,
@@ -558,6 +786,22 @@ class RoomService:
         session.flush()
         return speech_file
 
+    def review_speech_file(
+        self, session: Session, room: Room, file_id: int, *, approved: bool
+    ) -> SpeechFile:
+        room = self._lock_room(session, room.id)
+        speech_file = session.execute(
+            select(SpeechFile)
+            .where(SpeechFile.id == file_id, SpeechFile.room_id == room.id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if not speech_file or speech_file.upload_type != "speaker":
+            raise NotFoundError("فایل سخنران مورد نظر یافت نشد.")
+        speech_file.approval_status = "approved" if approved else "rejected"
+        speech_file.updated_at_ms = utc_now_ms()
+        session.flush()
+        return speech_file
+
     def delete_speech_file(self, session: Session, room: Room, file_id: int) -> None:
         """حذف فایل و ثبت در صف پاک‌سازی فیزیکی."""
         room = self._lock_room(session, room.id)
@@ -568,8 +812,11 @@ class RoomService:
             raise NotFoundError("فایل مورد نظر یافت نشد.")
 
         room.storage_used_bytes = max(0, room.storage_used_bytes - file.size_bytes)
-        if room.owner:
-            room.owner.storage_used_bytes = max(0, room.owner.storage_used_bytes - file.size_bytes)
+        locked_owner = self._lock_owner(session, room.owner_id)
+        if locked_owner:
+            locked_owner.storage_used_bytes = max(
+                0, locked_owner.storage_used_bytes - file.size_bytes
+            )
 
         enqueue_cleanup(session, backend=file.backend, storage_key=file.storage_key, reason="user_deleted")
         session.delete(file)

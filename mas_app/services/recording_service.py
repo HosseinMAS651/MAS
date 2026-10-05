@@ -4,14 +4,14 @@ from __future__ import annotations
 import datetime as dt
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import Settings
 from ..core.errors import ConflictError, NotFoundError, QuotaExceededError, RecordingError
 from ..core.security import sanitize_filename
 from ..core.timeutil import utc_now_ms
-from ..db.models import RecordingChunk, RecordingSession, Room, Speaker, SpeechFile
+from ..db.models import RecordingChunk, RecordingSession, Room, Speaker, SpeechFile, User
 from ..storage.base import StorageBackend
 from .cleanup_queue import enqueue_cleanup
 
@@ -56,6 +56,14 @@ class RecordingService:
             query = query.with_for_update()
         return session.execute(query).scalars().first()
 
+    @staticmethod
+    def normalize_mime_type(mime_type: str | None) -> str:
+        mime = (mime_type or "").split(";", 1)[0].strip().lower()
+        return mime if mime in {
+            "audio/webm", "audio/mp4", "audio/ogg", "audio/wav", "audio/x-wav",
+            "audio/mpeg", "audio/aac", "audio/flac",
+        } else "audio/webm"
+
     def start_or_resume(
         self,
         session: Session,
@@ -64,12 +72,13 @@ class RecordingService:
         *,
         mime_type: str = "audio/webm",
     ) -> RecordingSession:
-        if not room.recording_enabled:
+        if not (room.recording_enabled or room.speaker_mode_enabled):
             raise RecordingError("قابلیت ضبط صدا برای این اتاق فعال نیست.")
 
+        normalized_mime = self.normalize_mime_type(mime_type)
         locked_room = self._lock_room(session, room.id)
         blocking = self.get_active_session(
-            session, locked_room.id, lock=True, include_finalizing=True
+            session, locked_room.id, speaker.id, lock=True, include_finalizing=True
         )
         if blocking and blocking.status == "finalizing":
             raise ConflictError(
@@ -91,7 +100,7 @@ class RecordingService:
                 speaker_id=speaker.id,
                 speaker_name=sp_name[:120],
                 status="recording",
-                mime_type=(mime_type or "audio/webm").split(";", 1)[0][:60],
+                mime_type=normalized_mime,
                 chunk_seq=0,
                 bytes_received=0,
                 recorded_ms=0,
@@ -105,6 +114,9 @@ class RecordingService:
             session.add(rec)
             session.flush()
             return rec
+
+        if rec.chunk_seq == 0:
+            rec.mime_type = normalized_mime
 
         if rec.status == "paused":
             rec.status = "recording"
@@ -136,28 +148,28 @@ class RecordingService:
         *,
         room_id: int,
     ) -> RecordingChunk:
-        """Store one ordered chunk; retries of the same sequence are idempotent."""
+        """Store one ordered chunk while reserving room and owner quotas atomically."""
         if seq < 0:
             raise RecordingError("شمارهٔ تکه نامعتبر است.")
         if not chunk_data:
             raise RecordingError("تکهٔ ارسالی خالی است.")
+        if len(chunk_data) > self.settings.max_recording_chunk_bytes:
+            raise QuotaExceededError("اندازهٔ تکه از سقف مجاز آپلود ضبط بیشتر است.")
         if len(chunk_data) > self.settings.max_recording_bytes:
             raise QuotaExceededError("اندازهٔ تکهٔ ضبط غیرمجاز است.")
 
+        # Use one lock order everywhere (room -> recording -> owner) so parallel
+        # chunks, finalization and speaker deletion cannot deadlock on PostgreSQL.
+        room = self._lock_room(session, room_id)
         rec = session.execute(
             select(RecordingSession)
-            .where(
-                RecordingSession.id == session_id,
-                RecordingSession.room_id == room_id,
-            )
+            .where(RecordingSession.id == session_id, RecordingSession.room_id == room_id)
             .with_for_update()
         ).scalar_one_or_none()
         if not rec:
             raise NotFoundError("نشست ضبط متعلق به این اتاق یافت نشد.")
         if rec.status not in self.ACTIVE_STATUSES:
-            raise RecordingError(
-                f"امکان ارسال تکه برای ضبط در وضعیت {rec.status} وجود ندارد."
-            )
+            raise RecordingError(f"امکان ارسال تکه برای ضبط در وضعیت {rec.status} وجود ندارد.")
 
         existing = session.execute(
             select(RecordingChunk).where(
@@ -168,13 +180,43 @@ class RecordingService:
         if existing:
             return existing
         if seq != rec.chunk_seq:
-            raise RecordingError(
-                f"ترتیب تکه‌ها نامعتبر است؛ تکهٔ بعدی باید {rec.chunk_seq} باشد."
-            )
+            raise RecordingError(f"ترتیب تکه‌ها نامعتبر است؛ تکهٔ بعدی باید {rec.chunk_seq} باشد.")
         if rec.chunk_seq >= self.settings.recording_max_chunks:
             raise RecordingError("حداکثر تعداد تکه‌های مجاز برای این ضبط پر شده است.")
         if rec.bytes_received + len(chunk_data) > self.settings.max_recording_bytes:
             raise QuotaExceededError("حجم کل ضبط از سقف مجاز سرور فراتر رفته است.")
+
+        active_statuses = ("recording", "paused", "finalizing")
+        room_reserved = session.execute(
+            select(func.coalesce(func.sum(RecordingSession.bytes_received), 0)).where(
+                RecordingSession.room_id == room.id,
+                RecordingSession.status.in_(active_statuses),
+            )
+        ).scalar_one()
+        if room.storage_used_bytes + int(room_reserved) + len(chunk_data) > self.settings.max_room_storage_bytes:
+            raise QuotaExceededError("سقف فضای اتاق برای دریافت این تکهٔ ضبط کافی نیست.")
+
+        owner = session.execute(
+            select(User)
+            .where(User.id == room.owner_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        if owner:
+            owner_reserved = session.execute(
+                select(func.coalesce(func.sum(RecordingSession.bytes_received), 0))
+                .join(Room, Room.id == RecordingSession.room_id)
+                .where(
+                    Room.owner_id == owner.id,
+                    RecordingSession.status.in_(active_statuses),
+                )
+            ).scalar_one()
+            if owner.storage_used_bytes + int(owner_reserved) + len(chunk_data) > self.settings.max_user_storage_bytes:
+                raise QuotaExceededError("سقف کل فضای حساب برای دریافت این تکهٔ ضبط کافی نیست.")
+
+        available = self.storage.available_bytes()
+        if available is not None and len(chunk_data) > max(0, available - 8 * 1024 * 1024):
+            raise QuotaExceededError("فضای خالی دیسک برای دریافت این تکهٔ ضبط کافی نیست.")
 
         chunk_key = f"chunks/{rec.room_id}/{rec.id}/{seq:08d}.bin"
         size_bytes, _ = await self.storage.save_bytes(chunk_key, chunk_data)
@@ -217,7 +259,7 @@ class RecordingService:
             tz = ZoneInfo(tz_name)
         except Exception:
             tz = ZoneInfo("UTC")
-        when = dt.datetime.fromtimestamp(now_ms / 1000, tz=dt.timezone.utc).astimezone(tz)
+        when = dt.datetime.fromtimestamp(now_ms / 1000, tz=dt.UTC).astimezone(tz)
         return when.strftime("%Y%m%d_%H%M%S")
 
     async def finish_and_save(
@@ -226,9 +268,10 @@ class RecordingService:
         rec_session: RecordingSession,
     ) -> SpeechFile | None:
         """Finalize one recording exactly once and keep retryable failures recoverable."""
+        room = self._lock_room(session, rec_session.room_id)
         rec = session.execute(
             select(RecordingSession)
-            .where(RecordingSession.id == rec_session.id)
+            .where(RecordingSession.id == rec_session.id, RecordingSession.room_id == room.id)
             .with_for_update()
         ).scalar_one_or_none()
         if not rec:
@@ -274,8 +317,12 @@ class RecordingService:
             session.flush()
             raise RecordingError("ترتیب یا تعداد تکه‌های ضبط کامل نیست؛ فایل ذخیره نشد.")
 
-        room = self._lock_room(session, rec.room_id)
-        owner = room.owner
+        owner = session.execute(
+            select(User)
+            .where(User.id == room.owner_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
         total_expected = sum(c.size_bytes for c in chunks)
         if total_expected != rec.bytes_received:
             rec.status = "failed"
@@ -285,18 +332,47 @@ class RecordingService:
             session.flush()
             raise RecordingError("اطلاعات ضبط ناسازگار است؛ فایل ذخیره نشد.")
 
-        if room.storage_used_bytes + total_expected > self.settings.max_room_storage_bytes:
+        active_statuses = self.BLOCKING_STATUSES
+        room_reserved_bytes = session.execute(
+            select(func.coalesce(func.sum(RecordingSession.bytes_received), 0)).where(
+                RecordingSession.room_id == room.id,
+                RecordingSession.id != rec.id,
+                RecordingSession.status.in_(active_statuses),
+            )
+        ).scalar_one()
+        if (
+            room.storage_used_bytes + int(room_reserved_bytes) + total_expected
+            > self.settings.max_room_storage_bytes
+        ):
             rec.status = "paused"
-            rec.error = "سقف فضای اتاق برای ذخیرهٔ ضبط کافی نیست."
+            rec.error = "سقف فضای اتاق برای ذخیرهٔ ضبط و نشست‌های دیگر کافی نیست."
             rec.version += 1
             session.flush()
-            raise QuotaExceededError("فضای ذخیره‌سازی اختصاص داده شده به این اتاق کافی نیست.")
-        if owner and owner.storage_used_bytes + total_expected > self.settings.max_user_storage_bytes:
+            raise QuotaExceededError("فضای اتاق با احتساب ضبط‌های دیگر برای ذخیرهٔ این فایل کافی نیست.")
+
+        owner_reserved_bytes = 0
+        if owner:
+            owner_reserved_bytes = session.execute(
+                select(func.coalesce(func.sum(RecordingSession.bytes_received), 0))
+                .join(Room, Room.id == RecordingSession.room_id)
+                .where(
+                    Room.owner_id == owner.id,
+                    RecordingSession.id != rec.id,
+                    RecordingSession.status.in_(active_statuses),
+                )
+            ).scalar_one()
+        if (
+            owner
+            and owner.storage_used_bytes + int(owner_reserved_bytes) + total_expected
+            > self.settings.max_user_storage_bytes
+        ):
             rec.status = "paused"
-            rec.error = "سقف فضای حساب برای ذخیرهٔ ضبط کافی نیست."
+            rec.error = "سقف فضای حساب با احتساب ضبط‌های دیگر برای ذخیره کافی نیست."
             rec.version += 1
             session.flush()
-            raise QuotaExceededError("سقف کل فضای حساب کاربری شما برای ذخیرهٔ ضبط کافی نیست.")
+            raise QuotaExceededError(
+                "سقف فضای حساب با احتساب فایل‌های ذخیره‌شده و ضبط‌های در حال دریافت کافی نیست."
+            )
 
         available = self.storage.available_bytes()
         if available is not None and total_expected + 64 * 1024 * 1024 > available:
