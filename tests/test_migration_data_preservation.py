@@ -197,3 +197,26 @@ def test_versioned_migration_0005_preserves_existing_records(tmp_path):
         ).one() == (51, "recordings/51/chunks/00000000.webm")
 
     database.engine.dispose()
+
+
+def test_versioned_migration_0005_recovers_when_old_recording_index_is_missing(tmp_path):
+    database_path = tmp_path / "repairable-versioned-mas.db"
+    settings = _settings(database_path)
+    command.upgrade(_alembic_config(settings), "0004_legacy_auth_schema_compat")
+
+    # Simulate a manually repaired legacy database where the 0002 index was
+    # removed before the new versioned migration reached production.
+    connection = sqlite3.connect(database_path)
+    connection.execute("DROP INDEX uq_recording_sessions_one_active_per_room")
+    connection.commit()
+    connection.close()
+
+    database = Database(settings)
+    run_database_migrations(database, settings)
+
+    recording_index_names = {
+        index["name"] for index in inspect(database.engine).get_indexes("recording_sessions")
+    }
+    assert "uq_recording_sessions_one_active_per_room" not in recording_index_names
+    assert "uq_recording_sessions_one_active_per_room_speaker" in recording_index_names
+    database.engine.dispose()
