@@ -8,7 +8,7 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0005_speaker_mode_recovery_and_review"
+revision = "0005_speaker_mode_review"
 down_revision = "0004_legacy_auth_schema_compat"
 branch_labels = None
 depends_on = None
