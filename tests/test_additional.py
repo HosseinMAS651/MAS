@@ -128,3 +128,14 @@ def test_legacy_database_migration_with_duplicates():
             rows = s.execute(text("SELECT id, username, username_key FROM users ORDER BY id")).fetchall()
             assert len(rows) == 2
             assert rows[0][2] != rows[1][2]  # username_key نباید یکسان باشد
+
+
+def test_render_development_env_is_forced_to_production(monkeypatch):
+    monkeypatch.setenv("RENDER", "true")
+    settings = Settings(
+        env="development",
+        secret_key="render-test-secret-at-least-32-characters-long",
+        database_url="sqlite:///render-test.db",
+        allow_sqlite_in_production=True,
+    )
+    assert settings.env == "production"

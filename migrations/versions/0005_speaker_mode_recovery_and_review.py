@@ -24,12 +24,6 @@ def _existing_columns(table: str) -> set[str]:
     return {column["name"] for column in inspector.get_columns(table)}
 
 
-def _add_column_if_missing(table: str, column: sa.Column) -> None:
-    """Apply this migration safely to databases repaired before 0005 was run."""
-    if column.name not in _existing_columns(table):
-        op.add_column(table, column)
-
-
 def _existing_indexes(table: str) -> set[str]:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -38,10 +32,14 @@ def _existing_indexes(table: str) -> set[str]:
     return {index["name"] for index in inspector.get_indexes(table)}
 
 
+def _add_column_if_missing(table: str, column: sa.Column) -> None:
+    if column.name not in _existing_columns(table):
+        op.add_column(table, column)
+
+
 def upgrade() -> None:
-    # Some earlier MAS deployments added these fields through the legacy
-    # compatibility path and then were brought back to Alembic revision 0004.
-    # Do not fail with duplicate-column errors in that case.
+    # These checks make 0005 safe for Render databases that were partially
+    # repaired before the Alembic revision was recorded.
     _add_column_if_missing(
         "users",
         sa.Column("recovery_code_hash", sa.String(length=64), nullable=True),
@@ -79,9 +77,6 @@ def upgrade() -> None:
         sa.Column("approval_status", sa.String(length=16), server_default="approved", nullable=False),
     )
 
-    # The old guard blocked a paused recording in one speaker from allowing the
-    # next speaker to start. Remove it only when it exists, then install the
-    # speaker-scoped guard. No rows or stored files are modified.
     recording_indexes = _existing_indexes("recording_sessions")
     if "uq_recording_sessions_one_active_per_room" in recording_indexes:
         op.drop_index("uq_recording_sessions_one_active_per_room", table_name="recording_sessions")
@@ -96,8 +91,6 @@ def upgrade() -> None:
             postgresql_where=sa.text(ACTIVE_RECORDING_PREDICATE),
         )
 
-    # Multiple NULL speaker_code_hash values are allowed by a normal UNIQUE
-    # index, while duplicate real hashes remain rejected.
     if "uq_speaker_room_code_hash" not in _existing_indexes("speakers"):
         op.create_index(
             "uq_speaker_room_code_hash",

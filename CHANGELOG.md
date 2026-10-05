@@ -1,5 +1,13 @@
 # تاریخچه تغییرات و نسخه‌ها (Changelog)
 
+## [2.0.3] - 2026-10-06
+
+### 🚀 اصلاح نهایی Deploy و migration
+- migration `0005` در برابر ستون‌ها و indexهای موجود از قبل idempotent شد.
+- خطای واقعی Alembic اکنون با traceback در لاگ ثبت می‌شود تا Render آن را به status 3 محدود نکند.
+- روی Render، `MAS_ENV=development` دیگر باعث اجرای محیط development نمی‌شود و به production تبدیل می‌شود.
+- Python نسخه `3.13.5` برای Native Render با `.python-version` مشخص شد.
+
 ## [2.0.0] - 2026-09-22
 
 ### 🔧 بازنویسی و اصلاحات پایداری/امنیت (Bug Fix Release)
