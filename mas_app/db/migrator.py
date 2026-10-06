@@ -285,6 +285,60 @@ def _legacy_add_columns(db: Database) -> None:
                 raise RuntimeError("نام‌های کاربری legacy حتی پس از نرمال‌سازی یکتا نشدند.") from exc
 
 
+def _repair_missing_current_columns(db: Database) -> None:
+    """Repair additive schema drift when Alembic is already stamped at head.
+
+    A previous deployment could record the 0005 revision after a partial/legacy
+    migration path while one or more additive columns were still absent. ORM
+    queries then fail because SQLAlchemy selects every mapped column. This repair
+    only adds known nullable/defaulted columns when they are missing; it never
+    removes rows, changes existing values, or rewrites an existing column.
+    """
+    inspector = inspect(db.engine)
+    tables = set(inspector.get_table_names())
+    repair_specs: dict[str, list[tuple[str, str]]] = {
+        "users": [
+            ("recovery_code_hash", "VARCHAR(64)"),
+        ],
+        "rooms": [
+            ("speaker_mode_enabled", "BOOLEAN DEFAULT FALSE"),
+            ("speaker_uploads_enabled", "BOOLEAN DEFAULT FALSE"),
+        ],
+        "speakers": [
+            ("speaker_code_hash", "VARCHAR(64)"),
+            ("speaker_code_encrypted", "VARCHAR(512)"),
+            ("speaker_session_hash", "VARCHAR(64)"),
+            ("presence_status", "VARCHAR(16) DEFAULT 'offline'"),
+            ("presence_last_seen_at_ms", "BIGINT DEFAULT 0"),
+        ],
+        "speech_files": [
+            ("approval_status", "VARCHAR(16) DEFAULT 'approved'"),
+        ],
+    }
+
+    changed = False
+    for table, columns in repair_specs.items():
+        if table not in tables:
+            continue
+        current = {c["name"] for c in inspect(db.engine).get_columns(table)}
+        missing = [(name, sql_type) for name, sql_type in columns if name not in current]
+        if not missing:
+            continue
+        with db.engine.begin() as conn:
+            for name, sql_type in missing:
+                quoted = name.replace('"', '""')
+                # We have already checked the live schema above, so a plain
+                # ADD COLUMN is safe and works on both PostgreSQL and SQLite.
+                conn.execute(
+                    text(f'ALTER TABLE "{table}" ADD COLUMN "{quoted}" {sql_type}')
+                )
+                logger.warning("schema repair: column %s.%s was missing and was added", table, name)
+                changed = True
+
+    if changed:
+        logger.info("schema repair completed: missing additive columns were restored")
+
+
 def run_database_migrations(db: Database, settings: Settings) -> None:
     if ":memory:" in settings.database_url:
         Base.metadata.create_all(db.engine)
@@ -315,8 +369,12 @@ def run_database_migrations(db: Database, settings: Settings) -> None:
     else:
         raise RuntimeError("ساختار دیتابیس ناشناخته است و بدون مهاجرت امن نمی‌توان برنامه را اجرا کرد.")
 
-    # Final compatibility check. Alembic owns versioned DB changes; metadata
-    # check is a guard against broken deploys rather than a runtime schema builder.
+    # Alembic can already be stamped at head on older legacy installations even
+    # when an additive 0005 column is missing. Repair only those safe additive
+    # columns before the application receives requests.
+    _repair_missing_current_columns(db)
+
+    # Final compatibility check.
     inspector = inspect(db.engine)
     missing = set(Base.metadata.tables) - set(inspector.get_table_names())
     if missing:
