@@ -197,3 +197,20 @@ def test_versioned_migration_0005_preserves_existing_records(tmp_path):
         ).one() == (51, "recordings/51/chunks/00000000.webm")
 
     database.engine.dispose()
+
+
+def test_schema_repair_restores_missing_0005_column_after_revision_is_stamped(tmp_path):
+    database_path = tmp_path / "drifted-versioned-mas.db"
+    settings = _settings(database_path)
+    command.upgrade(_alembic_config(settings), "head")
+
+    connection = sqlite3.connect(database_path)
+    connection.execute("ALTER TABLE users DROP COLUMN recovery_code_hash")
+    connection.commit()
+    connection.close()
+
+    database = Database(settings)
+    run_database_migrations(database, settings)
+    columns = {c["name"] for c in inspect(database.engine).get_columns("users")}
+    assert "recovery_code_hash" in columns
+    database.engine.dispose()
