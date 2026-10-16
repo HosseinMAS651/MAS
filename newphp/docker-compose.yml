@@ -1,0 +1,103 @@
+# ── MAS (نسخهٔ PHP/Laravel) — Docker Compose ────────────────────────────
+# اجرا:  docker compose up -d --build
+# سپس:  http://localhost:8080
+# ساخت اولین مدیر: docker compose exec app php artisan mas:create-admin USERNAME
+# (کاربر باید قبلش از صفحهٔ ثبت‌نام حساب ساخته باشد.)
+name: mas
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mas
+      POSTGRES_USER: mas
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-mas-change-me}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mas -d mas"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: ./backend
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: "${APP_URL:-http://localhost:8080}"
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: mas
+      DB_USERNAME: mas
+      DB_PASSWORD: "${DB_PASSWORD:-mas-change-me}"
+      CACHE_STORE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      MAS_ENV: production
+      MAS_SECRET_KEY: "${MAS_SECRET_KEY:-}"
+      MAS_STORAGE_BACKEND: "${MAS_STORAGE_BACKEND:-local}"
+      MAS_STORAGE_DIR: /var/www/html/storage/app/uploads
+      MAS_COOKIE_SECURE: "${MAS_COOKIE_SECURE:-false}"
+      MAS_PUBLIC_BASE_URL: "${MAS_PUBLIC_BASE_URL:-}"
+    volumes:
+      - uploads:/var/www/html/storage/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # چرخهٔ نگهداری (پاک‌سازی فایل‌های حذف‌شده و ضبط‌های متروکه) هر ۵ دقیقه.
+  scheduler:
+    build: ./backend
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: mas
+      DB_USERNAME: mas
+      DB_PASSWORD: "${DB_PASSWORD:-mas-change-me}"
+      CACHE_STORE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      MAS_ENV: production
+      MAS_SECRET_KEY: "${MAS_SECRET_KEY:-}"
+      MAS_STORAGE_BACKEND: "${MAS_STORAGE_BACKEND:-local}"
+      MAS_STORAGE_DIR: /var/www/html/storage/app/uploads
+    volumes:
+      - uploads:/var/www/html/storage/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+
+  web:
+    build: ./frontend
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
