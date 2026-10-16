@@ -88,3 +88,19 @@ newphp/
 │   └── tests/ (Feature + Unit)
 └── frontend/         # همان React/TypeScript نسخهٔ Python، بدون تغییر
 ```
+
+## استقرار روی هاست اشتراکی (cPanel) — بدون Docker
+
+اگر Docker ندارید: فایل‌های `backend/` را در پوشهٔ خانه (`/home/USER/`) بریزید (نه داخل `public_html`)، محتوای `deploy/public_html.htaccess` و فرانت‌اند بیلدشده را در `public_html` بگذارید، بعد در ترمینال:
+
+```bash
+cd /home/USER
+php -v                       # باید 8.2+ باشد (مثلاً /opt/alt/php83/usr/bin/php)
+composer install --no-dev --optimize-autoloader   # ساخت پوشهٔ vendor
+cp .env.example .env         # مقادیر MySQL و MAS_SECRET_KEY را تنظیم کنید
+php artisan key:generate
+php artisan migrate --force
+php artisan config:cache
+```
+
+در `.env` حتماً `DB_CONNECTION=mysql` (مشخصات دیتابیس cPanel)، `CACHE_STORE=file` و `MAS_ENV=production` باشد. برای چرخهٔ نگهداری هم یک Cron Job هر ۵ دقیقه بگذارید: `php artisan schedule:run`.
