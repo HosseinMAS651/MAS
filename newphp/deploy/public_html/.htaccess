@@ -1,0 +1,25 @@
+# MAS روی هاست اشتراکی (Apache): SPA + API لاراول در یک دامنه
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # انتقال هدر Authorization به PHP (برای توکن Bearer سخنران)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # مسیرهای API و سلامت -> Laravel (index.php)
+    RewriteRule ^api(/.*)?$ index.php [L]
+    RewriteRule ^(health|ready)$ index.php [L]
+
+    # فایل‌های استاتیک واقعی (assets فرانت‌اند و...) مستقیم سرو شوند
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # بقیهٔ مسیرها -> SPA ری‌اکت
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+DirectoryIndex index.html index.php
