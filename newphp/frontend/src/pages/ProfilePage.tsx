@@ -1,0 +1,284 @@
+import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
+import { formatBytes, formatDate } from '../utils/formatters';
+
+export const ProfilePage: React.FC = () => {
+  const { user, refreshUser } = useAuth();
+
+  const [accountName, setAccountName] = useState(user?.account_name || '');
+  const [job, setJob] = useState(user?.job || '');
+  const [age, setAge] = useState(user?.age ? String(user.age) : '');
+  const [timezone, setTimezone] = useState(user?.timezone || 'Asia/Tehran');
+  const [calendar, setCalendar] = useState<'jalali' | 'gregorian'>(user?.calendar || 'jalali');
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [profileMsg, setProfileMsg] = useState({ type: '', text: '' });
+  const [passwordMsg, setPasswordMsg] = useState({ type: '', text: '' });
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [loadingPassword, setLoadingPassword] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryMsg, setRecoveryMsg] = useState({ type: '', text: '' });
+  const [loadingRecoveryCode, setLoadingRecoveryCode] = useState(false);
+
+  if (!user) return null;
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileMsg({ type: '', text: '' });
+    setLoadingProfile(true);
+    try {
+      await api.post('/api/auth/profile', {
+        account_name: accountName,
+        job,
+        age: age ? parseInt(age, 10) : null,
+        timezone,
+        calendar,
+      });
+      await refreshUser();
+      setProfileMsg({ type: 'success', text: 'اطلاعات پروفایل با موفقیت ذخیره شد.' });
+    } catch (err: any) {
+      setProfileMsg({ type: 'error', text: err.message || 'خطا در ذخیره پروفایل.' });
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  const handleIssueRecoveryCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryMsg({ type: '', text: '' });
+    setRecoveryCode('');
+    setLoadingRecoveryCode(true);
+    try {
+      const result = await api.post('/api/auth/recovery-code', { current_password: recoveryPassword });
+      setRecoveryCode(result.recovery_code);
+      setRecoveryPassword('');
+      await refreshUser();
+      setRecoveryMsg({ type: 'success', text: 'کد تازه ساخته شد؛ اکنون آن را یادداشت کنید. کد قبلی باطل است.' });
+    } catch (err: any) {
+      setRecoveryMsg({ type: 'error', text: err.message || 'ساخت کد بازیابی ناموفق بود.' });
+    } finally {
+      setLoadingRecoveryCode(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordMsg({ type: '', text: '' });
+    setLoadingPassword(true);
+    try {
+      await api.post('/api/auth/change-password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setPasswordMsg({ type: 'success', text: 'رمز عبور با موفقیت به‌روزرسانی شد.' });
+    } catch (err: any) {
+      setPasswordMsg({ type: 'error', text: err.message || 'خطا در تغییر رمز عبور.' });
+    } finally {
+      setLoadingPassword(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+      <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-4 transition-colors">
+        <div>
+          <h1 className="text-2xl font-black text-gray-900 dark:text-white">پروفایل کاربری</h1>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">مشاهده و ویرایش مشخصات حساب کاربری و تنظیمات سامانه</p>
+        </div>
+        <div className="text-left bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900 px-4 py-2 rounded-2xl">
+          <span className="text-xs text-blue-600 dark:text-blue-400 block font-bold">مصرف کل فضای شما:</span>
+          <span className="text-base font-black text-blue-900 dark:text-blue-200">{formatBytes(user.storage_used_bytes)}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* مشخصات کاربری */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-4 transition-colors">
+          <h2 className="text-lg font-bold text-gray-800 dark:text-slate-100 border-b border-gray-100 dark:border-slate-800 pb-3">اطلاعات فردی و منطقه زمانی</h2>
+
+          {profileMsg.text && (
+            <div
+              className={`p-3 text-xs font-bold rounded-xl ${
+                profileMsg.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+              }`}
+            >
+              {profileMsg.text}
+            </div>
+          )}
+
+          <form onSubmit={handleUpdateProfile} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 mb-1">نام کاربری (غیرقابل تغییر)</label>
+              <input
+                type="text"
+                disabled
+                value={user.username}
+                dir="ltr"
+                className="w-full px-4 py-2.5 bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-gray-500 dark:text-slate-400 text-sm font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">نام و نام خانوادگی</label>
+              <input
+                type="text"
+                value={accountName}
+                onChange={(e) => setAccountName(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">سمت / شغل</label>
+                <input
+                  type="text"
+                  value={job}
+                  onChange={(e) => setJob(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">سن</label>
+                <input
+                  type="number"
+                  value={age}
+                  onChange={(e) => setAge(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">تقویم</label>
+                <select
+                  value={calendar}
+                  onChange={(e) => setCalendar(e.target.value as any)}
+                  className="w-full px-3 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-xs font-medium"
+                >
+                  <option value="jalali">هجری شمسی</option>
+                  <option value="gregorian">میلادی</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">منطقه زمانی</label>
+                <select
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-xs font-medium"
+                  dir="ltr"
+                >
+                  <option value="Asia/Tehran">Asia/Tehran</option>
+                  <option value="UTC">UTC</option>
+                  <option value="Europe/London">Europe/London</option>
+                  <option value="America/New_York">America/New_York</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loadingProfile}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-600/20 transition-all text-sm mt-2"
+            >
+              {loadingProfile ? 'در حال ذخیره…' : 'ذخیره تغییرات'}
+            </button>
+          </form>
+        </div>
+
+        {/* تغییر رمز عبور */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-4 flex flex-col justify-between transition-colors">
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold text-gray-800 dark:text-slate-100 border-b border-gray-100 dark:border-slate-800 pb-3">امنیت و تغییر رمز عبور</h2>
+
+            {passwordMsg.text && (
+              <div
+                className={`p-3 text-xs font-bold rounded-xl ${
+                  passwordMsg.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+                }`}
+              >
+                {passwordMsg.text}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">رمز عبور فعلی</label>
+                <input
+                  type="password"
+                  required
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">رمز عبور جدید</label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-sm"
+                  placeholder="حداقل ۸ کاراکتر"
+                  dir="ltr"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loadingPassword}
+                className="w-full py-2.5 bg-gray-800 dark:bg-slate-800 hover:bg-black dark:hover:bg-slate-700 text-white font-bold rounded-xl shadow-md transition-all text-sm mt-4 border border-transparent dark:border-slate-700"
+              >
+                {loadingPassword ? 'در حال تغییر…' : 'تغییر رمز عبور'}
+              </button>
+            </form>
+          </div>
+
+          <div className="pt-4 border-t border-gray-100 dark:border-slate-800 text-xs text-gray-400 dark:text-slate-500">
+            تاریخ عضویت: {formatDate(user.created_at_ms, user.calendar, user.timezone)}
+          </div>
+        </div>
+      </div>
+
+      <section className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-slate-100">کد بازیابی یک‌بارمصرف</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+              وضعیت: {user.has_recovery_code ? 'کد تنظیم شده است' : 'هنوز کدی تنظیم نشده است'}؛ ساخت کد تازه، کد قبلی را باطل می‌کند.
+            </p>
+          </div>
+        </div>
+        {recoveryMsg.text && (
+          <div className={`p-3 text-xs font-bold rounded-xl ${recoveryMsg.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'}`}>
+            {recoveryMsg.text}
+          </div>
+        )}
+        {recoveryCode && (
+          <code dir="ltr" className="block rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-4 text-center font-black tracking-widest text-amber-800 dark:text-amber-300 select-all">
+            {recoveryCode}
+          </code>
+        )}
+        <form onSubmit={handleIssueRecoveryCode} className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 dark:text-slate-300 mb-1">برای تأیید، رمز عبور فعلی را وارد کنید</label>
+            <input type="password" required value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} dir="ltr" autoComplete="current-password" className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl text-sm" />
+          </div>
+          <button disabled={loadingRecoveryCode} className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm disabled:opacity-50">
+            {loadingRecoveryCode ? 'در حال ساخت…' : 'ساخت / تعویض کد'}
+          </button>
+        </form>
+        <p className="text-[11px] text-gray-400 dark:text-slate-500">کد خام دوباره از سرور قابل دریافت نیست. اگر گم شد و هنوز وارد حساب هستید، یک کد جدید بسازید.</p>
+      </section>
+    </div>
+  );
+};
